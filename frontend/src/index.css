@@ -1,0 +1,14 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply bg-slate-950 text-slate-100 font-sans min-h-screen selection:bg-emerald-500/30 selection:text-white;
+  }
+}
+
+/* Custom scrollbar and premium glassmorphism styling variables */
+:root {
+  --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
+}

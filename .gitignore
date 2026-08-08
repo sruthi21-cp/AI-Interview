@@ -1,0 +1,36 @@
+# Node/Vite dependencies
+node_modules/
+dist/
+dist-ssr/
+*.local
+.env
+.env.production
+.eslintcache
+
+# Python/FastAPI dependencies
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+ENV/
+.env
+.venv
+pip-log.txt
+pip-delete-this-directory.txt
+.pytest_cache/
+.coverage
+htmlcov/
+.mypy_cache/
+
+# Databases
+*.db
+*.sqlite
+
+# IDEs and OS files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
