@@ -50,10 +50,10 @@ export default function DashboardPage() {
           <h2 className="text-lg font-bold text-white">Recent Mock Sessions</h2>
           <button
             id="btn-new-interview"
-            onClick={() => alert('AI Interview simulation is not implemented in this MVP foundation.')}
+            onClick={() => navigate('/interview/setup')}
             className="px-4 py-2 text-sm font-medium text-white bg-emerald-600 rounded-lg hover:bg-emerald-500 transition-colors"
           >
-            Start New Mock
+            Start New Interview
           </button>
         </div>
         <div className="overflow-x-auto">

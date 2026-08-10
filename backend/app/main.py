@@ -1,8 +1,11 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.api.v1 import auth, health
+from app.api.v1 import auth, health, interviews
 from app.core.config import settings
 from app.core.database import engine, Base
+
+# Import all models so Base.metadata includes them before create_all
+import app.models  # noqa: F401 — registers User and InterviewSession
 
 # Automatically create database tables if they do not exist
 Base.metadata.create_all(bind=engine)
@@ -33,6 +36,11 @@ def health_check():
 # API v1 endpoints
 app.include_router(health.router, prefix=settings.API_V1_STR, tags=["Health"])
 app.include_router(auth.router, prefix=f"{settings.API_V1_STR}/auth", tags=["Authentication"])
+app.include_router(
+    interviews.router,
+    prefix=f"{settings.API_V1_STR}/interviews",
+    tags=["Interviews"],
+)
 
 if __name__ == "__main__":
     import uvicorn

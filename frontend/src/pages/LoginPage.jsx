@@ -14,8 +14,15 @@ export default function LoginPage() {
     setLoading(true);
     try {
       console.log('Logging in with:', email, password);
-      // For MVP out-of-the-box demonstration, store dummy token and go to dashboard
-      localStorage.setItem('token', 'dummy_token');
+      // Call backend login endpoint
+      const formData = new URLSearchParams();
+      formData.append('username', email);
+      formData.append('password', password);
+      const response = await api.post('/auth/login', formData, {
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      });
+      const { access_token } = response.data;
+      localStorage.setItem('token', access_token);
       navigate('/dashboard');
     } catch (err) {
       setError(err.response?.data?.detail || 'Authentication failed. Please try again.');
