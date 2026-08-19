@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
+import api from '../services/api';
 
 export default function RegisterPage() {
   const [fullName, setFullName] = useState('');
@@ -14,11 +15,15 @@ export default function RegisterPage() {
     setError('');
     setLoading(true);
     try {
-      console.log('Registering user:', fullName, email, password);
-      // Simulate successful registration redirecting to Login
+      await api.post('/auth/register', {
+        username: fullName,
+        email: email,
+        password: password,
+      });
       navigate('/login');
     } catch (err) {
-      setError(err.response?.data?.detail || 'Registration failed. Please try again.');
+      const detail = err.response?.data?.detail;
+      setError(typeof detail === 'string' ? detail : 'Registration failed. Please try again.');
     } finally {
       setLoading(false);
     }

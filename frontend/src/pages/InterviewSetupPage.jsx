@@ -95,9 +95,9 @@ export default function InterviewSetupPage() {
         ...form,
         question_count: Number(form.question_count),
       };
-      const response = await api.post('/interviews', payload);
-      const interview = response.data;
-      navigate(`/interview/${interview.id}`);
+      const response = await api.post('/interviews/start', payload);
+      const data = response.data;
+      navigate(`/interview/${data.session_id}`);
     } catch (err) {
       const detail =
         err?.response?.data?.detail ||

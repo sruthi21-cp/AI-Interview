@@ -10,6 +10,10 @@ class InterviewSession(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    # Store evaluations as JSON string list
+    evaluations = Column(String, default='[]', nullable=False)
+    # Track number of answered questions
+    answered_count = Column(Integer, default=0, nullable=False)
 
     job_role = Column(String, nullable=False)
     interview_type = Column(String, nullable=False)

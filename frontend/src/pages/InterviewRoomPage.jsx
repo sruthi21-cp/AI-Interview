@@ -1,14 +1,14 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import api from '../services/api';
 
-// Helper: pretty-print status with a colored badge
+/* ── Status badge ─────────────────────────────────────────────── */
 function StatusBadge({ status }) {
   const map = {
-    created: { label: 'Created', cls: 'bg-sky-500/10 text-sky-400 border-sky-500/20' },
+    created:     { label: 'Created',     cls: 'bg-sky-500/10 text-sky-400 border-sky-500/20' },
     in_progress: { label: 'In Progress', cls: 'bg-amber-500/10 text-amber-400 border-amber-500/20' },
-    completed: { label: 'Completed', cls: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' },
-    cancelled: { label: 'Cancelled', cls: 'bg-rose-500/10 text-rose-400 border-rose-500/20' },
+    completed:   { label: 'Completed',   cls: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' },
+    cancelled:   { label: 'Cancelled',   cls: 'bg-rose-500/10 text-rose-400 border-rose-500/20' },
   };
   const { label, cls } = map[status] || { label: status, cls: 'bg-slate-700 text-slate-300 border-slate-600' };
   return (
@@ -18,51 +18,171 @@ function StatusBadge({ status }) {
   );
 }
 
-// Single detail row
-function DetailRow({ icon, label, value }) {
+/* ── Progress bar ─────────────────────────────────────────────── */
+function ProgressBar({ current, total }) {
+  const pct = Math.min((current / total) * 100, 100);
   return (
-    <div className="flex items-start gap-4 py-4 border-b border-slate-800/60 last:border-none">
-      <div className="w-8 h-8 rounded-lg bg-slate-800 flex items-center justify-center flex-shrink-0 text-emerald-400">
-        {icon}
+    <div className="space-y-2">
+      <div className="flex justify-between text-xs text-slate-400">
+        <span>Question {current} of {total}</span>
+        <span>{Math.round(pct)}%</span>
       </div>
-      <div className="flex-1 min-w-0">
-        <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">{label}</p>
-        <p className="text-slate-100 font-medium mt-0.5">{value}</p>
+      <div className="h-2 bg-slate-800 rounded-full overflow-hidden">
+        <div
+          className="h-full bg-gradient-to-r from-emerald-500 to-teal-400 rounded-full transition-all duration-500 ease-out"
+          style={{ width: `${pct}%` }}
+        />
       </div>
     </div>
   );
 }
 
+/* ── Score ring (SVG) ─────────────────────────────────────────── */
+function ScoreRing({ value, max = 10, size = 80 }) {
+  const radius = (size - 10) / 2;
+  const circumference = 2 * Math.PI * radius;
+  const offset = circumference - (value / max) * circumference;
+  const color = value >= 7 ? '#10b981' : value >= 4 ? '#f59e0b' : '#ef4444';
+  return (
+    <svg width={size} height={size} className="drop-shadow-lg">
+      <circle cx={size / 2} cy={size / 2} r={radius}
+        stroke="rgba(255,255,255,0.06)" strokeWidth="6" fill="none" />
+      <circle cx={size / 2} cy={size / 2} r={radius}
+        stroke={color} strokeWidth="6" fill="none"
+        strokeLinecap="round"
+        strokeDasharray={circumference}
+        strokeDashoffset={offset}
+        style={{ transition: 'stroke-dashoffset 0.8s cubic-bezier(0.4,0,0.2,1)' }}
+        transform={`rotate(-90 ${size / 2} ${size / 2})`} />
+      <text x="50%" y="50%" dominantBaseline="central" textAnchor="middle"
+        fill={color} fontSize="18" fontWeight="700">
+        {value}
+      </text>
+    </svg>
+  );
+}
+
+/* ── Metric bar ───────────────────────────────────────────────── */
+function MetricBar({ label, value }) {
+  const pct = Math.round(value * 100);
+  const barColor = pct >= 70
+    ? 'from-emerald-500 to-teal-400'
+    : pct >= 40
+      ? 'from-amber-500 to-yellow-400'
+      : 'from-rose-500 to-pink-400';
+  return (
+    <div className="space-y-1.5">
+      <div className="flex justify-between text-sm">
+        <span className="text-slate-300">{label}</span>
+        <span className="text-slate-400 font-medium">{pct}%</span>
+      </div>
+      <div className="h-1.5 bg-slate-800 rounded-full overflow-hidden">
+        <div
+          className={`h-full bg-gradient-to-r ${barColor} rounded-full transition-all duration-700 ease-out`}
+          style={{ width: `${pct}%` }}
+        />
+      </div>
+    </div>
+  );
+}
+
+/* ══════════════════════════════════════════════════════════════ */
 export default function InterviewRoomPage() {
   const { interviewId } = useParams();
   const navigate = useNavigate();
 
+  /* session metadata */
   const [interview, setInterview] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
+  const [loading, setLoading]     = useState(true);
+  const [error, setError]         = useState('');
 
+  /* question / answer flow */
+  const [question, setQuestion]             = useState(null);
+  const [answer, setAnswer]                 = useState('');
+  const [submitting, setSubmitting]         = useState(false);
+  const [evaluation, setEvaluation]         = useState(null);
+  const [fetchingQuestion, setFetchingQuestion] = useState(false);
+  const [apiError, setApiError]             = useState('');
+
+  /* progress tracking */
+  const [questionNumber, setQuestionNumber] = useState(1);
+  const [isComplete, setIsComplete]         = useState(false);
+  const [evaluations, setEvaluations]       = useState([]);
+
+  /* ── Load session details ────────────────────────────────── */
   useEffect(() => {
-    const fetchInterview = async () => {
+    (async () => {
       try {
-        const response = await api.get(`/interviews/${interviewId}`);
-        setInterview(response.data);
+        const { data } = await api.get(`/interviews/${interviewId}`);
+        setInterview(data);
+        if (data.status === 'completed') setIsComplete(true);
       } catch (err) {
-        if (err?.response?.status === 404) {
-          setError('Interview session not found or you do not have access to it.');
-        } else if (err?.response?.status === 401) {
+        if (err?.response?.status === 404)
+          setError('Interview session not found or you do not have access.');
+        else if (err?.response?.status === 401)
           navigate('/login');
-        } else {
+        else
           setError('Failed to load interview session. Please try again.');
-        }
       } finally {
         setLoading(false);
       }
-    };
-
-    fetchInterview();
+    })();
   }, [interviewId, navigate]);
 
-  // Loading state
+  /* ── Fetch next question ─────────────────────────────────── */
+  const fetchNextQuestion = useCallback(async () => {
+    setFetchingQuestion(true);
+    setApiError('');
+    try {
+      const { data } = await api.get(`/interviews/${interviewId}/next`);
+      setQuestion(data.question);
+      setEvaluation(null);
+      setAnswer('');
+    } catch (err) {
+      const detail = err?.response?.data?.detail || 'Failed to fetch next question.';
+      setApiError(typeof detail === 'string' ? detail : JSON.stringify(detail));
+    } finally {
+      setFetchingQuestion(false);
+    }
+  }, [interviewId]);
+
+  useEffect(() => {
+    if (interview && !question && !isComplete) fetchNextQuestion();
+  }, [interview, question, isComplete, fetchNextQuestion]);
+
+  /* ── Submit answer ───────────────────────────────────────── */
+  const handleSubmitAnswer = async (e) => {
+    e.preventDefault();
+    if (!answer.trim() || submitting) return;
+    setSubmitting(true);
+    setApiError('');
+    try {
+      const { data } = await api.post(`/interviews/${interviewId}/answer`, { answer });
+      const evalData = data.evaluation;
+      // Store evaluation for final summary
+      setEvaluations((prev) => [...prev, { questionNumber, questionText: question?.text, evalData }]);
+      // If final question, navigate to final evaluation page
+      if (questionNumber >= (interview?.question_count || 0)) {
+        navigate(`/interview/${interviewId}/evaluation`);
+      } else {
+        // Proceed to next question
+        setQuestionNumber((prev) => prev + 1);
+        setQuestion(null);
+        setAnswer('');
+        setEvaluation(null);
+      }
+    } catch (err) {
+      const detail = err?.response?.data?.detail || 'Failed to submit answer.';
+      setApiError(typeof detail === 'string' ? detail : JSON.stringify(detail));
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+
+
+  /* ═══════════ RENDER ═══════════════════════════════════════ */
+
   if (loading) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[50vh] space-y-4">
@@ -72,7 +192,6 @@ export default function InterviewRoomPage() {
     );
   }
 
-  // Error state
   if (error) {
     return (
       <div className="max-w-xl mx-auto mt-16 text-center space-y-4">
@@ -93,121 +212,108 @@ export default function InterviewRoomPage() {
     );
   }
 
-  const formattedDate = interview?.created_at
-    ? new Date(interview.created_at).toLocaleString()
-    : '—';
-
   return (
-    <div className="max-w-3xl mx-auto space-y-8">
-      {/* Back navigation */}
-      <button
-        onClick={() => navigate('/dashboard')}
-        className="flex items-center gap-2 text-slate-400 hover:text-white transition-colors text-sm group"
-      >
-        <svg
-          className="w-4 h-4 group-hover:-translate-x-0.5 transition-transform"
-          fill="none"
-          viewBox="0 0 24 24"
-          stroke="currentColor"
-          strokeWidth={2}
-        >
+    <div className="max-w-3xl mx-auto space-y-8 pb-12">
+      {/* ── Back link ─────────────────────────────── */}
+      <button onClick={() => navigate('/dashboard')}
+        className="flex items-center gap-2 text-slate-400 hover:text-white transition-colors text-sm group">
+        <svg className="w-4 h-4 group-hover:-translate-x-0.5 transition-transform" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
           <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
         </svg>
         Back to Dashboard
       </button>
 
-      {/* Header */}
+      {/* ── Header ────────────────────────────────── */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
           <div className="flex items-center gap-3 mb-2">
             <h1 className="text-2xl font-bold tracking-tight text-white">Interview Room</h1>
-            <StatusBadge status={interview.status} />
+            <StatusBadge status={isComplete ? 'completed' : interview.status} />
           </div>
-          <p className="text-slate-400 text-sm">Session ID: <span className="font-mono text-slate-300">#{interview.id}</span></p>
-        </div>
-      </div>
-
-      {/* Session details card */}
-      <div className="bg-slate-900/80 border border-slate-800 rounded-2xl overflow-hidden backdrop-blur-sm">
-        <div className="px-6 py-4 border-b border-slate-800 bg-slate-900/50">
-          <h2 className="text-base font-semibold text-white">Session Details</h2>
-        </div>
-        <div className="px-6">
-          <DetailRow
-            icon={
-              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M21 13.255A23.931 23.931 0 0112 15c-3.183 0-6.22-.62-9-1.745M16 6V4a2 2 0 00-2-2h-4a2 2 0 00-2 2v2m4 6h.01M5 20h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-              </svg>
-            }
-            label="Job Role"
-            value={interview.job_role}
-          />
-          <DetailRow
-            icon={
-              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-              </svg>
-            }
-            label="Interview Type"
-            value={interview.interview_type}
-          />
-          <DetailRow
-            icon={
-              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
-              </svg>
-            }
-            label="Experience Level"
-            value={interview.experience_level}
-          />
-          <DetailRow
-            icon={
-              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-              </svg>
-            }
-            label="Difficulty"
-            value={interview.difficulty}
-          />
-          <DetailRow
-            icon={
-              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
-            }
-            label="Number of Questions"
-            value={`${interview.question_count} questions`}
-          />
-          <DetailRow
-            icon={
-              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
-            }
-            label="Created At"
-            value={formattedDate}
-          />
-        </div>
-      </div>
-
-      {/* Milestone placeholder */}
-      <div className="bg-slate-900/60 border border-slate-700/50 border-dashed rounded-2xl px-8 py-10 text-center space-y-4">
-        <div className="w-14 h-14 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center mx-auto">
-          <svg className="w-7 h-7 text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z" />
-          </svg>
-        </div>
-        <div>
-          <h3 className="text-lg font-semibold text-white">AI Questions Coming Next</h3>
-          <p className="text-slate-400 text-sm mt-1 max-w-md mx-auto">
-            AI interview questions will be implemented in the next milestone. Your session is ready and waiting.
+          <p className="text-slate-400 text-sm">
+            {interview.job_role} · {interview.interview_type} · {interview.difficulty}
           </p>
         </div>
-        <div className="inline-flex items-center gap-2 px-4 py-2 bg-slate-800/80 rounded-lg text-xs font-medium text-slate-400 border border-slate-700/50">
-          <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-          Session Foundation Active
-        </div>
       </div>
+
+      {/* ── Progress ──────────────────────────────── */}
+      {!isComplete && (
+        <ProgressBar current={questionNumber} total={interview.question_count} />
+      )}
+
+      {/* ── API error ─────────────────────────────── */}
+      {apiError && (
+        <div className="bg-rose-500/10 border border-rose-500/30 rounded-xl px-6 py-4">
+          <p className="text-rose-400 text-sm">{apiError}</p>
+        </div>
+      )}
+
+
+
+      {/* ── LOADING QUESTION ──────────────────────── */}
+      {!isComplete && fetchingQuestion && !question && (
+        <div className="bg-slate-900/60 border border-slate-700/50 border-dashed rounded-2xl px-8 py-12 text-center space-y-4">
+          <div className="w-10 h-10 rounded-full border-2 border-emerald-500/30 border-t-emerald-500 animate-spin mx-auto" />
+          <p className="text-slate-400 text-sm">Generating question…</p>
+        </div>
+      )}
+
+      {/* ── QUESTION + ANSWER ─────────────────────── */}
+      {!isComplete && question && (
+        <div className="bg-slate-900/80 border border-slate-800 rounded-2xl overflow-hidden backdrop-blur-sm">
+          <div className="px-6 py-4 border-b border-slate-800 bg-slate-900/50 flex items-center justify-between">
+            <h2 className="text-base font-semibold text-white">Question {questionNumber}</h2>
+            <span className="text-xs text-slate-500">{interview.interview_type} · {interview.difficulty}</span>
+          </div>
+
+          <div className="p-6 space-y-6">
+            <p className="text-slate-200 text-lg leading-relaxed">{question.text}</p>
+
+            <form onSubmit={handleSubmitAnswer} className="space-y-4">
+              <div className="relative">
+                <textarea
+                  id="answer-input"
+                  className="w-full min-h-[160px] p-4 rounded-xl bg-slate-800/80 text-slate-100 border border-slate-700 placeholder-slate-500 resize-y focus:outline-none focus:ring-2 focus:ring-emerald-500/50 focus:border-emerald-500/50 transition-all"
+                  placeholder="Type your answer here…"
+                  value={answer}
+                  onChange={(e) => setAnswer(e.target.value)}
+                  disabled={submitting}
+                  required
+                />
+                <span className="absolute bottom-3 right-3 text-xs text-slate-600">{answer.length} chars</span>
+              </div>
+
+              <div className="flex justify-end">
+                <button
+                  id="btn-submit-answer"
+                  type="submit"
+                  disabled={submitting || !answer.trim()}
+                  className="inline-flex items-center gap-2 px-6 py-2.5 bg-emerald-600 hover:bg-emerald-500 disabled:bg-emerald-600/40 disabled:cursor-not-allowed text-white font-semibold rounded-xl transition-all duration-200 shadow-lg shadow-emerald-600/20 hover:shadow-emerald-500/30 focus:outline-none focus:ring-2 focus:ring-emerald-500/50"
+                >
+                  {submitting ? (
+                    <>
+                      <svg className="animate-spin h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                      </svg>
+                      Evaluating…
+                    </>
+                  ) : (
+                    <>
+                      Submit Answer
+                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12h15m0 0l-6.75-6.75M19.5 12l-6.75 6.75" />
+                      </svg>
+                    </>
+                  )}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+
     </div>
   );
 }
