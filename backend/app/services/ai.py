@@ -2,7 +2,7 @@ import os
 import json
 import logging
 import requests
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 from pydantic import BaseModel, Field
 
 logger = logging.getLogger("uvicorn.error")
@@ -74,10 +74,91 @@ class AIProvider:
             metadata={"ai": True, "provider": self.provider_name}
         )
 
-    def generate_questions_batch(self, setup: Dict[str, Any], count: int) -> List[str]:
-        """Generate a list of N questions in one batch."""
+    def generate_questions_batch(self, setup: Dict[str, Any], count: int, resume_text: Optional[str] = None, job_description: Optional[str] = None) -> List[str]:
+        """Generate a list of N questions in one batch, optionally using resume and/or job description for personalization."""
         if self.provider_name == "mock":
             return self._generate_mock_questions(setup, count)
+        # Build prompt with optional context
+        context_parts = []
+        if resume_text:
+            # Truncate to reasonable length to avoid huge prompts
+            truncated_resume = resume_text[:2000]
+            context_parts.append(f"Resume Summary:\n{truncated_resume}")
+        if job_description:
+            context_parts.append(f"Job Description:\n{job_description}")
+        context_section = "\n\n".join(context_parts) + ("\n\n" if context_parts else "")
+        prompt = (
+            f"Generate a list of exactly {count} interview questions for a candidate.\n"
+            f"Role: {setup.get('job_role')}\n"
+            f"Type: {setup.get('interview_type')}\n"
+            f"Experience Level: {setup.get('experience_level')}\n"
+            f"Difficulty: {setup.get('difficulty')}\n"
+            f"Requirements:\n"
+            f"1. Generate exactly {count} questions.\n"
+            f"2. Return response as a JSON object with a single key 'questions' containing a list of strings.\n"
+            f"Example:\n{{\"questions\": [\"Question 1?\", \"Question 2?\"]}}\n"
+        )
+        # Append optional context
+        if context_section:
+            prompt = context_section + prompt
+        
+        if self.provider_name in ("gemini", "openai") and not self.api_key:
+            raise AIConfigError(f"AI provider is set to '{self.provider_name}' but AI_API_KEY is not configured in backend/.env.")
+        
+        try:
+            if self.provider_name == "gemini":
+                url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={self.api_key}"
+                headers = {"Content-Type": "application/json"}
+                body = {
+                    "contents": [{"parts": [{"text": prompt}]}],
+                    "generationConfig": {"responseMimeType": "application/json"}
+                }
+                res = requests.post(url, json=body, headers=headers, timeout=15)
+                res.raise_for_status()
+                data = res.json()
+                text = data["candidates"][0]["content"]["parts"][0]["text"]
+                parsed = json.loads(text)
+                questions = parsed.get("questions", [])
+                if len(questions) == count:
+                    return questions
+                logger.warning("Gemini returned %d questions instead of %d. Adjusting count.", len(questions), count)
+                if len(questions) > count:
+                    return questions[:count]
+                elif len(questions) > 0:
+                    while len(questions) < count:
+                        questions.append(f"Follow-up question about {setup.get('job_role')}.")
+                    return questions
+            elif self.provider_name == "openai":
+                url = "https://api.openai.com/v1/chat/completions"
+                headers = {
+                    "Content-Type": "application/json",
+                    "Authorization": f"Bearer {self.api_key}"
+                }
+                body = {
+                    "model": "gpt-4o-mini",
+                    "messages": [
+                        {"role": "system", "content": "You are a professional technical recruiter. Return JSON only."},
+                        {"role": "user", "content": prompt}
+                    ],
+                    "response_format": {"type": "json_object"}
+                }
+                res = requests.post(url, json=body, headers=headers, timeout=15)
+                res.raise_for_status()
+                data = res.json()
+                text = data["choices"][0]["message"]["content"]
+                parsed = json.loads(text)
+                questions = parsed.get("questions", [])
+                if len(questions) == count:
+                    return questions
+                if len(questions) > count:
+                    return questions[:count]
+                elif len(questions) > 0:
+                    while len(questions) < count:
+                        questions.append(f"Follow-up question about {setup.get('job_role')}.")
+                    return questions
+        except Exception as e:
+            logger.error("AI question generation failed: %s", str(e), exc_info=True)
+            raise RuntimeError(f"AI Provider ({self.provider_name}) generation failed: {str(e)}") from e
 
         prompt = (
             f"Generate a list of exactly {count} interview questions for a candidate.\n"

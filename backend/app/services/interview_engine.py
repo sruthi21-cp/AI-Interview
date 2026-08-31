@@ -1,5 +1,5 @@
 import os
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 
 try:
     from fastapi import HTTPException, status
@@ -31,7 +31,7 @@ class InterviewEngine:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Interview session not found")
         return session
 
-    def create_session(self, db: Session, session_in: InterviewSessionCreate, user_id: int) -> InterviewSession:
+    def create_session(self, db: Session, session_in: InterviewSessionCreate, user_id: int, resume_text: Optional[str] = None, job_description: Optional[str] = None) -> InterviewSession:
         # Batch generate the questions upfront using the AI provider (with mock fallback)
         setup = {
             "job_role": session_in.job_role,
@@ -40,7 +40,7 @@ class InterviewEngine:
             "difficulty": session_in.difficulty,
             "question_count": session_in.question_count,
         }
-        questions_list = self.provider.generate_questions_batch(setup, session_in.question_count)
+        questions_list = self.provider.generate_questions_batch(setup, session_in.question_count, resume_text=resume_text, job_description=job_description)
 
         # Create interview session record and set status to in_progress
         new_session = InterviewSession(

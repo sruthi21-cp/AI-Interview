@@ -1,10 +1,11 @@
-from typing import Any, Dict
-from fastapi import APIRouter, Depends, HTTPException, status, Body
+from typing import Any, Dict, Optional
+from fastapi import APIRouter, Depends, HTTPException, status, Body, File, Form, UploadFile
 from sqlalchemy.orm import Session
 
 from app.api import deps
 from app.models.user import User as UserModel
 from app.models.interview_session import InterviewSession
+from app.utils.pdf_extractor import extract_text_from_pdf
 from app.schemas.interview import (
     InterviewSessionCreate,
     InterviewSessionResponse,
@@ -38,16 +39,44 @@ def create_interview(
     return db_session
 
 @router.post("/start", response_model=Dict, status_code=status.HTTP_201_CREATED)
-def start_interview(
+@router.post("/start", response_model=Dict, status_code=status.HTTP_201_CREATED)
+async def start_interview(
     session_in: InterviewSessionCreate,
     db: Session = Depends(deps.get_db),
     current_user: UserModel = Depends(deps.get_current_user),
+    resume: UploadFile = File(None),
+    job_description: Optional[str] = Form(None),
 ) -> Any:
-    """Create a session and return the first question."""
-    import logging
+    """Create a session and return the first question, with optional resume PDF and job description."""
+    import logging, os, tempfile
     logger = logging.getLogger("uvicorn.error")
+    resume_text: Optional[str] = None
+    # Process resume PDF if provided
+    if resume is not None:
+        if resume.content_type != "application/pdf":
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Resume must be a PDF file.")
+        content = await resume.read()
+        max_size = 2 * 1024 * 1024
+        if len(content) > max_size:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Resume PDF exceeds maximum size of 2 MiB.")
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
+            tmp.write(content)
+            tmp_path = tmp.name
+        try:
+            resume_text = extract_text_from_pdf(tmp_path)
+            if not resume_text.strip():
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Resume PDF is empty or could not be processed.")
+        finally:
+            try:
+                os.remove(tmp_path)
+            except OSError:
+                pass
+    # Validate job description length if provided
+    if job_description is not None:
+        if len(job_description) > 2000:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Job description exceeds maximum length of 2000 characters.")
     try:
-        session = engine.create_session(db, session_in, current_user.id)
+        session = engine.create_session(db, session_in, current_user.id, resume_text=resume_text, job_description=job_description)
         question = engine.get_next_question(db, session.id)
         return {"session_id": session.id, "question": question}
     except Exception as e:

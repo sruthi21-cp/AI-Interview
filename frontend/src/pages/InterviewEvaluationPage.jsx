@@ -1,6 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import api from '../services/api';
+import { jsPDF } from 'jspdf';
+import html2canvas from 'html2canvas';
+// import html2pdf from 'html2pdf.js'; // removed unused
 
 /* ── Score ring (SVG) ─────────────────────────────────────────── */
 function ScoreRing({ value, max = 10, size = 100 }) {
@@ -112,8 +115,23 @@ export default function InterviewEvaluationPage() {
   const d = evalData;
   const scoreColor = d.overall_score >= 7 ? 'text-emerald-400' : d.overall_score >= 4 ? 'text-amber-400' : 'text-rose-400';
 
-  return (
-    <div className="max-w-3xl mx-auto space-y-8 pb-16">
+  const contentRef = useRef();
+
+const handleDownloadPdf = () => {
+  if (!contentRef.current) return;
+  html2canvas(contentRef.current, { scale: 2 }).then(canvas => {
+    const imgData = canvas.toDataURL('image/png');
+    const pdf = new jsPDF('p', 'pt', 'a4');
+    const imgProps = pdf.getImageProperties(imgData);
+    const pdfWidth = pdf.internal.pageSize.getWidth();
+    const pdfHeight = (imgProps.height * pdfWidth) / imgProps.width;
+    pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
+    pdf.save(`interview_evaluation_${new Date().toISOString().split('T')[0]}.pdf`);
+  });
+};
+
+return (
+    <div ref={contentRef} className="max-w-3xl mx-auto space-y-8 pb-16">
       {/* ── Back link ─────────────────────────────── */}
       <button onClick={() => navigate('/dashboard')}
         className="flex items-center gap-2 text-slate-400 hover:text-white transition-colors text-sm group">
@@ -248,6 +266,15 @@ export default function InterviewEvaluationPage() {
 
       {/* ── Actions ───────────────────────────────── */}
       <div className="flex flex-col sm:flex-row justify-center gap-4">
+        <button
+          onClick={handleDownloadPdf}
+          className="inline-flex items-center justify-center gap-2 px-8 py-3 bg-blue-600 hover:bg-blue-500 text-white font-semibold rounded-xl transition-all duration-200 shadow-lg shadow-blue-600/20 hover:shadow-blue-500/30"
+        >
+          Download PDF Report
+          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+          </svg>
+        </button>
         <button
           onClick={() => navigate('/dashboard')}
           className="inline-flex items-center justify-center gap-2 px-8 py-3 bg-emerald-600 hover:bg-emerald-500 text-white font-semibold rounded-xl transition-all duration-200 shadow-lg shadow-emerald-600/20 hover:shadow-emerald-500/30"
