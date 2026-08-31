@@ -14,6 +14,8 @@ class InterviewSession(Base):
     evaluations = Column(String, default='[]', nullable=False)
     # Track number of answered questions
     answered_count = Column(Integer, default=0, nullable=False)
+    # Store the generated questions as a JSON string list
+    questions = Column(String, default='[]', nullable=False)
 
     job_role = Column(String, nullable=False)
     interview_type = Column(String, nullable=False)

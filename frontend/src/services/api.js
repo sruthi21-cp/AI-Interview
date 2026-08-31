@@ -1,11 +1,18 @@
 import axios from 'axios';
 
+// Dynamically resolve the backend host so the frontend works whether
+// accessed via localhost or a LAN IP (e.g. 10.20.17.183).
+const backendBase =
+  import.meta.env.VITE_API_URL ||
+  `http://${window.location.hostname}:8000/api/v1`;
+
 const api = axios.create({
-  baseURL: import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1',
+  baseURL: backendBase,
   headers: {
     'Content-Type': 'application/json',
   },
 });
+
 
 api.interceptors.request.use(
   (config) => {

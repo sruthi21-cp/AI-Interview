@@ -32,6 +32,16 @@ class InterviewEngine:
         return session
 
     def create_session(self, db: Session, session_in: InterviewSessionCreate, user_id: int) -> InterviewSession:
+        # Batch generate the questions upfront using the AI provider (with mock fallback)
+        setup = {
+            "job_role": session_in.job_role,
+            "interview_type": session_in.interview_type,
+            "experience_level": session_in.experience_level,
+            "difficulty": session_in.difficulty,
+            "question_count": session_in.question_count,
+        }
+        questions_list = self.provider.generate_questions_batch(setup, session_in.question_count)
+
         # Create interview session record and set status to in_progress
         new_session = InterviewSession(
             user_id=user_id,
@@ -41,6 +51,9 @@ class InterviewEngine:
             difficulty=session_in.difficulty,
             question_count=session_in.question_count,
             status="in_progress",
+            questions=json.dumps(questions_list),
+            evaluations='[]',
+            answered_count=0,
         )
         db.add(new_session)
         db.commit()
@@ -49,29 +62,42 @@ class InterviewEngine:
 
     def get_next_question(self, db: Session, session_id: int) -> Dict[str, Any]:
         session = self._get_session(db, session_id)
-        # In a real implementation we would track answered questions.
-        # For now we generate a fresh mock question each call.
-        setup = {
-            "job_role": session.job_role,
-            "interview_type": session.interview_type,
-            "experience_level": session.experience_level,
-            "difficulty": session.difficulty,
-            "question_count": session.question_count,
-        }
-        # History is empty for mock provider.
-        question_dto = self.provider.generate_question(setup, [])
+        questions_list = json.loads(session.questions or '[]')
+        idx = session.answered_count or 0
+
+        if idx >= len(questions_list):
+            return {
+                "question_id": None,
+                "text": "No more questions. The interview is complete.",
+                "metadata": {"complete": True}
+            }
+
+        question_text = questions_list[idx]
         return {
-            "question_id": None,  # placeholder, real ID would be stored in DB
-            "text": question_dto.text,
-            "metadata": question_dto.metadata,
+            "question_id": idx + 1,
+            "text": question_text,
+            "metadata": {
+                "question_number": idx + 1,
+                "total_questions": len(questions_list)
+            },
         }
 
     def submit_answer(self, db: Session, session_id: int, answer: str) -> Dict[str, Any]:
         session = self._get_session(db, session_id)
+        questions_list = json.loads(session.questions or '[]')
+        idx = session.answered_count or 0
+
+        if idx >= len(questions_list):
+            raise HTTPException(status_code=400, detail="All questions have already been answered.")
+
+        question_text = questions_list[idx]
+
         # Evaluate answer using the AI provider
-        evaluation_dto = self.provider.evaluate_answer("mock question", answer, [])
+        evaluation_dto = self.provider.evaluate_answer(question_text, answer, [])
 
         eval_dict = {
+            "question": question_text,
+            "answer": answer,
             "score": evaluation_dto.score,
             "feedback": evaluation_dto.feedback,
             "correctness": evaluation_dto.correctness,

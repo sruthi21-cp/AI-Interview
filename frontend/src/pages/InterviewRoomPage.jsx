@@ -1,7 +1,8 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import api from '../services/api';
-
+import useSpeechRecognition from '../hooks/useSpeechRecognition';
+import { DEFAULT_INTERVIEW_DURATION_SECONDS } from '../config';
 /* ── Status badge ─────────────────────────────────────────────── */
 function StatusBadge({ status }) {
   const map = {
@@ -87,6 +88,8 @@ function MetricBar({ label, value }) {
 }
 
 /* ══════════════════════════════════════════════════════════════ */
+
+
 export default function InterviewRoomPage() {
   const { interviewId } = useParams();
   const navigate = useNavigate();
@@ -106,8 +109,69 @@ export default function InterviewRoomPage() {
 
   /* progress tracking */
   const [questionNumber, setQuestionNumber] = useState(1);
+  const [remainingTime, setRemainingTime] = useState(DEFAULT_INTERVIEW_DURATION_SECONDS);
+  const timerRef = useRef(null);
+  const timerInitialized = useRef(false);
   const [isComplete, setIsComplete]         = useState(false);
   const [evaluations, setEvaluations]       = useState([]);
+
+  /* speech recognition */
+  const baseAnswerRef = useRef('');
+
+  const handleTranscript = useCallback(({ finalTranscript, interimTranscript }) => {
+    const spokenText = [finalTranscript, interimTranscript].filter(Boolean).join(' ');
+    if (!spokenText) return;
+    const base = baseAnswerRef.current.trim();
+    const updated = base ? `${base} ${spokenText}` : spokenText;
+    setAnswer(updated);
+  }, []);
+
+  const {
+    isSupported: isSpeechSupported,
+    isListening,
+    error: speechError,
+    clearError: clearSpeechError,
+    startListening,
+    stopListening,
+  } = useSpeechRecognition({
+    onTranscript: handleTranscript,
+  });
+
+  const handleToggleVoice = () => {
+    // existing toggle logic remains unchanged
+    if (isListening) {
+      stopListening();
+      baseAnswerRef.current = answer;
+    } else {
+      baseAnswerRef.current = answer;
+      startListening();
+    }
+  };
+
+  // Submit current answer (used by manual and timer)
+  const submitCurrentAnswer = async () => {
+    if (!answer.trim() || submitting) return;
+    setSubmitting(true);
+    setApiError('');
+    try {
+      const { data } = await api.post(`/interviews/${interviewId}/answer`, { answer });
+      const evalData = data.evaluation;
+      setEvaluations((prev) => [...prev, { questionNumber, questionText: question?.text, evalData }]);
+      if (questionNumber >= (interview?.question_count || 0)) {
+        navigate(`/interview/${interviewId}/evaluation`);
+      } else {
+        setQuestionNumber((prev) => prev + 1);
+        setQuestion(null);
+        setAnswer('');
+        setEvaluation(null);
+      }
+    } catch (err) {
+      const detail = err?.response?.data?.detail || 'Failed to submit answer.';
+      setApiError(typeof detail === 'string' ? detail : JSON.stringify(detail));
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   /* ── Load session details ────────────────────────────────── */
   useEffect(() => {
@@ -115,6 +179,7 @@ export default function InterviewRoomPage() {
       try {
         const { data } = await api.get(`/interviews/${interviewId}`);
         setInterview(data);
+        setQuestionNumber((data.answered_count || 0) + 1);
         if (data.status === 'completed') setIsComplete(true);
       } catch (err) {
         if (err?.response?.status === 404)
@@ -128,6 +193,30 @@ export default function InterviewRoomPage() {
       }
     })();
   }, [interviewId, navigate]);
+
+  // Timer effect: start once interview info loaded
+  useEffect(() => {
+    if (!interview || isComplete) return;
+    if (timerInitialized.current) return;
+    timerInitialized.current = true;
+    setRemainingTime(DEFAULT_INTERVIEW_DURATION_SECONDS);
+    timerRef.current = setInterval(() => {
+      setRemainingTime((prev) => {
+        if (prev <= 1) {
+          clearInterval(timerRef.current);
+          // Time up handling
+          if (answer.trim()) {
+            submitCurrentAnswer();
+          } else {
+            navigate(`/interview/${interviewId}/evaluation`);
+          }
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+    return () => clearInterval(timerRef.current);
+  }, [interview, isComplete, answer, interviewId, navigate]);
 
   /* ── Fetch next question ─────────────────────────────────── */
   const fetchNextQuestion = useCallback(async () => {
@@ -228,6 +317,10 @@ export default function InterviewRoomPage() {
         <div>
           <div className="flex items-center gap-3 mb-2">
             <h1 className="text-2xl font-bold tracking-tight text-white">Interview Room</h1>
+                <div className="flex items-center gap-2">
+                  <span className="text-sm text-slate-300">Time left:</span>
+                  <span className={`font-mono text-lg ${remainingTime <= 60 ? 'text-rose-400' : 'text-emerald-400'}`}>{`${Math.floor(remainingTime / 60).toString().padStart(2, '0')}:${(remainingTime % 60).toString().padStart(2, '0')}`}</span>
+                </div>
             <StatusBadge status={isComplete ? 'completed' : interview.status} />
           </div>
           <p className="text-slate-400 text-sm">
@@ -280,6 +373,28 @@ export default function InterviewRoomPage() {
                   disabled={submitting}
                   required
                 />
+                {!isSpeechSupported && (
+                  <p className="mt-2 text-sm text-rose-400">Speech recognition is not supported in this browser. Please type your answer.</p>
+                )}
+                {speechError && (
+                  <p className="mt-2 text-sm text-rose-400">{speechError}</p>
+                )}
+                <div className="mt-2 flex items-center space-x-3">
+                  <button
+                    type="button"
+                    onClick={handleToggleVoice}
+                    className={`flex items-center px-4 py-2 rounded-md transition-colors duration-200 ${isListening ? 'bg-rose-600 hover:bg-rose-500' : 'bg-emerald-600 hover:bg-emerald-500'} text-white`}
+                    disabled={submitting}
+                  >
+                    {isListening ? (
+                      <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-1" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm-1-7V7a1 1 0 112 0v4a1 1 0 11-2 0z" clipRule="evenodd" /></svg>
+                    ) : (
+                      <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-1" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"><path d="M12 1v22" /><path d="M5 12h14" /></svg>
+                    )}
+                    {isListening ? 'Stop Listening' : 'Start Voice'}
+                  </button>
+                  {isListening && <span className="text-sm text-emerald-400">Listening…</span>}
+                </div>
                 <span className="absolute bottom-3 right-3 text-xs text-slate-600">{answer.length} chars</span>
               </div>
 

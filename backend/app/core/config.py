@@ -7,6 +7,8 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
     DATABASE_URL: str = "sqlite:///./sql_app.db"
     ENVIRONMENT: str = "development"
+    AI_PROVIDER: str = "mock"
+    AI_API_KEY: str | None = None
 
     model_config = SettingsConfigDict(
         env_file=".env",

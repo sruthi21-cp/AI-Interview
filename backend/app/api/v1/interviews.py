@@ -44,9 +44,18 @@ def start_interview(
     current_user: UserModel = Depends(deps.get_current_user),
 ) -> Any:
     """Create a session and return the first question."""
-    session = engine.create_session(db, session_in, current_user.id)
-    question = engine.get_next_question(db, session.id)
-    return {"session_id": session.id, "question": question}
+    import logging
+    logger = logging.getLogger("uvicorn.error")
+    try:
+        session = engine.create_session(db, session_in, current_user.id)
+        question = engine.get_next_question(db, session.id)
+        return {"session_id": session.id, "question": question}
+    except Exception as e:
+        logger.error("Failed to create interview session: %s", str(e), exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to create interview session: {str(e)}"
+        )
 
 @router.get("/{session_id}/next", response_model=Dict)
 def get_next_question(

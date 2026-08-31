@@ -99,13 +99,17 @@ export default function InterviewSetupPage() {
       const data = response.data;
       navigate(`/interview/${data.session_id}`);
     } catch (err) {
-      const detail =
-        err?.response?.data?.detail ||
-        (Array.isArray(err?.response?.data?.detail)
-          ? err.response.data.detail.map((d) => d.msg).join(', ')
-          : null) ||
-        'Failed to create interview session. Please try again.';
-      setApiError(typeof detail === 'string' ? detail : JSON.stringify(detail));
+      console.error('Interview creation error:', err?.response?.status, err?.response?.data);
+      const raw = err?.response?.data?.detail;
+      let detail;
+      if (Array.isArray(raw)) {
+        detail = raw.map((d) => d.msg || JSON.stringify(d)).join(', ');
+      } else if (typeof raw === 'string') {
+        detail = raw;
+      } else {
+        detail = 'Failed to create interview session. Please try again.';
+      }
+      setApiError(detail);
     } finally {
       setLoading(false);
     }
