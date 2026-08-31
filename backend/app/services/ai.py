@@ -157,8 +157,12 @@ class AIProvider:
                         questions.append(f"Follow-up question about {setup.get('job_role')}.")
                     return questions
         except Exception as e:
-            logger.error("AI question generation failed: %s", str(e), exc_info=True)
-            raise RuntimeError(f"AI Provider ({self.provider_name}) generation failed: {str(e)}") from e
+            logger.error(
+                "AI question generation failed: %s. Falling back to mock generation.",
+                str(e),
+                exc_info=True,
+            )
+            return self._generate_mock_questions(setup, count)
 
     def _generate_mock_questions(self, setup: Dict[str, Any], count: int) -> List[str]:
         role = setup.get("job_role", "Software Developer")
