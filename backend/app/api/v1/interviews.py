@@ -3,10 +3,15 @@ from app.schemas.interview import (
     InterviewSessionResponse,
     InterviewSessionListResponse,
 )
+from app.models.interview_session import InterviewSession
 from app.services.interview_engine import InterviewEngine
 from fastapi import APIRouter, Depends, HTTPException, status, Body, File, Form, UploadFile
+from typing import Optional, Any, Dict
+from sqlalchemy.orm import Session
 from app.api import deps
+
 from app.models.user import User as UserModel
+from app.utils.pdf_extractor import extract_text_from_pdf
 router = APIRouter()
 
 engine = InterviewEngine()
@@ -33,15 +38,26 @@ def create_interview(
     return db_session
 
 @router.post("/start", response_model=Dict, status_code=status.HTTP_201_CREATED)
-@router.post("/start", response_model=Dict, status_code=status.HTTP_201_CREATED)
 async def start_interview(
-    session_in: InterviewSessionCreate,
+    interview_type: str = Form(...),
+    job_role: str = Form(...),
+    experience_level: str = Form(...),
+    difficulty: str = Form(...),
+    question_count: int = Form(...),
     db: Session = Depends(deps.get_db),
     current_user: UserModel = Depends(deps.get_current_user),
     resume: UploadFile = File(None),
     job_description: Optional[str] = Form(None),
 ) -> Any:
     """Create a session and return the first question, with optional resume PDF and job description."""
+    # Build the Pydantic model for session creation
+    session_in = InterviewSessionCreate(
+        interview_type=interview_type,
+        job_role=job_role,
+        experience_level=experience_level,
+        difficulty=difficulty,
+        question_count=question_count,
+    )
     import logging, os, tempfile
     logger = logging.getLogger("uvicorn.error")
     resume_text: Optional[str] = None

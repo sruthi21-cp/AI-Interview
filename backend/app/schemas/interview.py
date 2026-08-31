@@ -14,19 +14,19 @@ JOB_ROLES = Literal[
     "Custom",
 ]
 
-INTERVIEW_TYPES = Literal["Technical", "HR", "Mixed"]
+INTERVIEW_TYPES = Literal["Technical", "HR", "Mixed", "Behavioral"]
 
 EXPERIENCE_LEVELS = Literal["Beginner", "Intermediate", "Advanced"]
 
-DIFFICULTIES = Literal["Easy", "Medium", "Hard"]
+DIFFICULTIES = Literal["Beginner", "Intermediate", "Advanced", "Easy", "Medium", "Hard"]
 
-QUESTION_COUNTS = Literal[5, 10, 15]
+QUESTION_COUNTS = Literal[3, 5, 10, 15]
 
 
 # ---- Request schema ----
 
 class InterviewSessionCreate(BaseModel):
-    job_role: JOB_ROLES
+    job_role: str = Field(..., max_length=100, description="Target role for interview, e.g., Python Developer")
     interview_type: INTERVIEW_TYPES
     experience_level: EXPERIENCE_LEVELS
     difficulty: DIFFICULTIES

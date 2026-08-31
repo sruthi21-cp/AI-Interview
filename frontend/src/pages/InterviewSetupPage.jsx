@@ -3,23 +3,16 @@ import { useNavigate } from 'react-router-dom';
 import api from '../services/api';
 
 // ---- Allowed option sets (mirrored from backend Literal types) ----
-const INTERVIEW_TYPES = ['Technical', 'HR', 'Mixed'];
-const JOB_ROLES = [
-  'Software Developer',
-  'AI/ML Engineer',
-  'Data Scientist',
-  'Backend Developer',
-  'Frontend Developer',
-  'Custom',
-];
+const INTERVIEW_TYPES = ['Technical', 'HR', 'Mixed', 'Behavioral'];
 const EXPERIENCE_LEVELS = ['Beginner', 'Intermediate', 'Advanced'];
 const DIFFICULTIES = ['Easy', 'Medium', 'Hard'];
-const QUESTION_COUNTS = [5, 10, 15];
+const QUESTION_COUNTS = [3, 5, 10];
 
 const INITIAL_FORM = {
   interview_type: '',
   job_role: '',
   experience_level: '',
+  job_description: '', // optional description
   difficulty: '',
   question_count: '',
 };
@@ -62,11 +55,28 @@ export default function InterviewSetupPage() {
   const [errors, setErrors] = useState({});
   const [apiError, setApiError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [resumeFile, setResumeFile] = useState(null);
 
   const handleSelect = (field, value) => {
     setForm((prev) => ({ ...prev, [field]: value }));
     // Clear field error on selection
     setErrors((prev) => ({ ...prev, [field]: '' }));
+  };
+
+  // Handle resume PDF file selection with client‑side validation
+  const handleFileChange = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    if (file.type !== 'application/pdf') {
+      setErrors((prev) => ({ ...prev, resume: 'Resume must be a PDF file.' }));
+      return;
+    }
+    if (file.size > 2 * 1024 * 1024) { // 2 MiB limit
+      setErrors((prev) => ({ ...prev, resume: 'Resume exceeds 2 MiB size limit.' }));
+      return;
+    }
+    setResumeFile(file);
+    setErrors((prev) => ({ ...prev, resume: '' }));
   };
 
   const validate = () => {
@@ -91,11 +101,22 @@ export default function InterviewSetupPage() {
 
     setLoading(true);
     try {
-      const payload = {
-        ...form,
-        question_count: Number(form.question_count),
-      };
-      const response = await api.post('/interviews/start', payload);
+      const formData = new FormData();
+      formData.append('interview_type', form.interview_type);
+      formData.append('job_role', form.job_role);
+      formData.append('experience_level', form.experience_level);
+      formData.append('difficulty', form.difficulty);
+      formData.append('question_count', String(form.question_count));
+      if (form.job_description) {
+        formData.append('job_description', form.job_description);
+      }
+      if (resumeFile) {
+        formData.append('resume', resumeFile);
+      }
+
+      const response = await api.post('/interviews/start', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
       const data = response.data;
       navigate(`/interview/${data.session_id}`);
     } catch (err) {
@@ -160,14 +181,24 @@ export default function InterviewSetupPage() {
           <div className="border-t border-slate-800" />
 
           {/* Job Role */}
-          <OptionGroup
-            label="Job Role"
-            options={JOB_ROLES}
-            value={form.job_role}
-            onChange={handleSelect}
-            fieldName="job_role"
-            error={errors.job_role}
-          />
+          <div className="space-y-2">
+            <label className="block text-sm font-semibold text-slate-300 tracking-wide">
+              Job Role
+            </label>
+            <input
+              type="text"
+              placeholder="e.g., Python Developer"
+              className={`w-full px-4 py-2 rounded-lg bg-slate-800/60 text-slate-100 border focus:outline-none focus:ring-2 focus:ring-emerald-500/50 ${errors.job_role ? 'border-rose-500' : 'border-slate-700'}`}
+              value={form.job_role}
+              onChange={(e) => {
+                setForm((prev) => ({ ...prev, job_role: e.target.value }));
+                setErrors((prev) => ({ ...prev, job_role: '' }));
+              }}
+            />
+            {errors.job_role && (
+              <p className="text-rose-400 text-xs mt-1">{errors.job_role}</p>
+            )}
+          </div>
 
           <div className="border-t border-slate-800" />
 
@@ -204,6 +235,41 @@ export default function InterviewSetupPage() {
             fieldName="question_count"
             error={errors.question_count}
           />
+        </div>
+        {/* Job Description (optional) */}
+        <div className="space-y-2">
+          <label className="block text-sm font-semibold text-slate-300 tracking-wide">
+            Job Description (optional)
+          </label>
+          <textarea
+            placeholder="Describe the job role or responsibilities..."
+            className={`w-full px-4 py-2 rounded-lg bg-slate-800/60 text-slate-100 border focus:outline-none focus:ring-2 focus:ring-emerald-500/50 ${errors.job_description ? 'border-rose-500' : 'border-slate-700'}`}
+            value={form.job_description}
+            rows={4}
+            onChange={(e) => {
+              setForm((prev) => ({ ...prev, job_description: e.target.value }));
+              setErrors((prev) => ({ ...prev, job_description: '' }));
+            }}
+          />
+          {errors.job_description && (
+            <p className="text-rose-400 text-xs mt-1">{errors.job_description}</p>
+          )}
+        </div>
+
+        {/* Resume Upload (optional) */}
+        <div className="space-y-2">
+          <label className="block text-sm font-semibold text-slate-300 tracking-wide">
+            Upload Resume (PDF, optional)
+          </label>
+          <input
+            type="file"
+            accept="application/pdf"
+            className={`w-full px-4 py-2 rounded-lg bg-slate-800/60 border focus:outline-none focus:ring-2 focus:ring-emerald-500/50 ${errors.resume ? 'border-rose-500' : 'border-slate-700'}`}
+            onChange={handleFileChange}
+          />
+          {errors.resume && (
+            <p className="text-rose-400 text-xs mt-1">{errors.resume}</p>
+          )}
         </div>
 
         {/* Summary preview */}

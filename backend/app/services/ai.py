@@ -160,92 +160,18 @@ class AIProvider:
             logger.error("AI question generation failed: %s", str(e), exc_info=True)
             raise RuntimeError(f"AI Provider ({self.provider_name}) generation failed: {str(e)}") from e
 
-        prompt = (
-            f"Generate a list of exactly {count} interview questions for a candidate.\n"
-            f"Role: {setup.get('job_role')}\n"
-            f"Type: {setup.get('interview_type')}\n"
-            f"Experience Level: {setup.get('experience_level')}\n"
-            f"Difficulty: {setup.get('difficulty')}\n"
-            f"Requirements:\n"
-            f"1. Generate exactly {count} questions.\n"
-            f"2. Return response as a JSON object with a single key 'questions' containing a list of strings.\n"
-            f"Example:\n"
-            f"{{\"questions\": [\"Question 1?\", \"Question 2?\"]}}"
-        )
-
-        if self.provider_name in ("gemini", "openai") and not self.api_key:
-            raise AIConfigError(f"AI provider is set to '{self.provider_name}' but AI_API_KEY is not configured in backend/.env.")
-
-        try:
-            if self.provider_name == "gemini":
-                url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={self.api_key}"
-                headers = {"Content-Type": "application/json"}
-                body = {
-                    "contents": [{"parts": [{"text": prompt}]}],
-                    "generationConfig": {
-                        "responseMimeType": "application/json"
-                    }
-                }
-                res = requests.post(url, json=body, headers=headers, timeout=15)
-                res.raise_for_status()
-                data = res.json()
-                text = data["candidates"][0]["content"]["parts"][0]["text"]
-                parsed = json.loads(text)
-                questions = parsed.get("questions", [])
-                if len(questions) == count:
-                    return questions
-                logger.warning("Gemini returned %d questions instead of %d. Adjusting count.", len(questions), count)
-                if len(questions) > count:
-                    return questions[:count]
-                elif len(questions) > 0:
-                    while len(questions) < count:
-                        questions.append(f"Follow-up question about {setup.get('job_role')}.")
-                    return questions
-
-            elif self.provider_name == "openai":
-                url = "https://api.openai.com/v1/chat/completions"
-                headers = {
-                    "Content-Type": "application/json",
-                    "Authorization": f"Bearer {self.api_key}"
-                }
-                body = {
-                    "model": "gpt-4o-mini",
-                    "messages": [
-                        {"role": "system", "content": "You are a professional technical recruiter. Return JSON only."},
-                        {"role": "user", "content": prompt}
-                    ],
-                    "response_format": {"type": "json_object"}
-                }
-                res = requests.post(url, json=body, headers=headers, timeout=15)
-                res.raise_for_status()
-                data = res.json()
-                text = data["choices"][0]["message"]["content"]
-                parsed = json.loads(text)
-                questions = parsed.get("questions", [])
-                if len(questions) == count:
-                    return questions
-                if len(questions) > count:
-                    return questions[:count]
-                elif len(questions) > 0:
-                    while len(questions) < count:
-                        questions.append(f"Follow-up question about {setup.get('job_role')}.")
-                    return questions
-
-        except Exception as e:
-            logger.error("AI question generation failed: %s", str(e), exc_info=True)
-            raise RuntimeError(f"AI Provider ({self.provider_name}) generation failed: {str(e)}") from e
-
     def _generate_mock_questions(self, setup: Dict[str, Any], count: int) -> List[str]:
         role = setup.get("job_role", "Software Developer")
         diff = setup.get("difficulty", "Medium")
         level = setup.get("experience_level", "Intermediate")
         itype = setup.get("interview_type", "Technical")
         
-        mock_templates = [
+        # Separate mock templates for technical and HR interview types
+        technical_templates = [
             f"Explain the lifecycle of a request in a typical {role} system.",
             f"What are the best practices for structuring code in a {level} {role} project?",
-            f"How do you handle performance bottleneck issues in a {diff} scenarios as a {role}?",
-            f"Describe a challenging {itype} problem you solved recently.",
+            f"How do you handle performance bottleneck issues in a {diff} scenario as a {role}?",
+            f"Describe a challenging technical problem you solved recently.",
             f"How do you approach writing clean, testable code for {role}?",
             f"Explain how you design database schemas for a scalable application.",
             f"What is your approach to handling error propagation and logging in a production app?",
@@ -258,7 +184,28 @@ class AIProvider:
             f"Describe how you troubleshoot a memory leak in a running environment.",
             f"How do you manage CI/CD pipelines and deployment strategies for {role}?"
         ]
-        
+        hr_templates = [
+            f"Tell me about a time you faced a conflict at work and how you resolved it.",
+            f"How do you handle tight deadlines and prioritize tasks?",
+            f"Describe a situation where you had to give constructive feedback to a teammate.",
+            f"What motivates you in your professional life?",
+            f"How do you approach work-life balance and stress management?",
+            f"Give an example of a time you displayed leadership without formal authority.",
+            f"Explain how you adapt to changes in project requirements.",
+            f"What are your long-term career goals and how does this role fit?",
+            f"Describe a failure you experienced and what you learned from it.",
+            f"How do you build relationships and collaborate across departments?"
+        ]
+        # Choose template list based on interview_type (itype)
+        if itype == "HR":
+            mock_templates = hr_templates
+        elif itype == "Mixed":
+            # Mix half technical, half HR (rounded up)
+            half = (len(technical_templates) + len(hr_templates)) // 2
+            mock_templates = technical_templates[:half] + hr_templates[: len(hr_templates) - (half - len(technical_templates))]
+        else:  # Technical or default
+            mock_templates = technical_templates
+
         questions = []
         for i in range(count):
             template = mock_templates[i % len(mock_templates)]
