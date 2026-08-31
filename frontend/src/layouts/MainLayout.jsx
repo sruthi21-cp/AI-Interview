@@ -12,6 +12,7 @@ export default function MainLayout() {
           <nav className="flex items-center gap-6">
             <Link to="/" id="nav-home" className="text-slate-300 hover:text-white transition-colors text-sm font-medium">Home</Link>
             <Link to="/dashboard" id="nav-dashboard" className="text-slate-300 hover:text-white transition-colors text-sm font-medium">Dashboard</Link>
+            <Link to="/profile" id="nav-profile" className="text-slate-300 hover:text-white transition-colors text-sm font-medium">Profile</Link>
             <Link to="/login" id="nav-login" className="px-4 py-2 text-sm font-medium text-slate-300 hover:text-white transition-colors bg-slate-850 rounded-lg hover:bg-slate-800 border border-slate-700/50">Log In</Link>
             <Link to="/register" id="nav-register" className="px-4 py-2 text-sm font-medium text-white bg-emerald-600 rounded-lg hover:bg-emerald-500 transition-colors shadow-lg shadow-emerald-600/20">Sign Up</Link>
           </nav>

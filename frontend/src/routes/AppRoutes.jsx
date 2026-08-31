@@ -9,6 +9,7 @@ import DashboardPage from '../pages/DashboardPage';
 import InterviewSetupPage from '../pages/InterviewSetupPage';
 import InterviewRoomPage from '../pages/InterviewRoomPage';
 import InterviewEvaluationPage from '../pages/InterviewEvaluationPage';
+import ProfilePage from '../pages/ProfilePage';
 
 // Simple ProtectedRoute wrapper for MVP framework demonstration
 const ProtectedRoute = ({ children }) => {
@@ -30,6 +31,14 @@ export default function AppRoutes() {
           element={
             <ProtectedRoute>
               <DashboardPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="profile"
+          element={
+            <ProtectedRoute>
+              <ProfilePage />
             </ProtectedRoute>
           }
         />
@@ -70,3 +79,4 @@ export default function AppRoutes() {
     </Routes>
   );
 }
+

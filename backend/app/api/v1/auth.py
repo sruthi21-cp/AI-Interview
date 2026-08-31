@@ -8,7 +8,7 @@ from app.api import deps
 from app.core import security
 from app.core.config import settings
 from app.models.user import User as UserModel
-from app.schemas.user import User, UserCreate, Token
+from app.schemas.user import User, UserCreate, Token, UserUpdateMe
 from app.services import auth as auth_service
 
 router = APIRouter()
@@ -65,3 +65,19 @@ def read_user_me(
     Get profile of current logged in user.
     """
     return current_user
+
+@router.put("/me", response_model=User)
+def update_user_me(
+    update_in: UserUpdateMe,
+    db: Session = Depends(deps.get_db),
+    current_user: UserModel = Depends(deps.get_current_user),
+) -> Any:
+    """
+    Update profile of current logged in user (full_name and/or password).
+    Changing password requires current_password for verification.
+    """
+    updated_user, error = auth_service.update_user_me(db, current_user, update_in)
+    if error:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=error)
+    return updated_user
+
