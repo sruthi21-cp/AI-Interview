@@ -178,3 +178,77 @@ class InterviewEngine:
             "per_question_evaluations": evals,
         }
 
+    def get_user_analytics(self, db: Session, user_id: int) -> Dict[str, Any]:
+        """Compute analytics across all interview sessions for a specific user.
+        Returns a dict with overall statistics, performance breakdown, trends,
+        strengths, weaknesses, and recent interview summaries.
+        """
+        # Fetch all sessions for the user
+        sessions = db.query(InterviewSession).filter(InterviewSession.user_id == user_id).order_by(InterviewSession.created_at.desc()).all()
+        total = len(sessions)
+        completed_sessions = [s for s in sessions if s.status == "completed"]
+        in_progress = len([s for s in sessions if s.status == "in_progress"])
+
+        # Prepare aggregates for completed sessions
+        scores = []
+        correctness = []
+        relevance = []
+        technical = []
+        communication = []
+        strengths = []
+        weaknesses = []
+        trend = []
+        recent = []
+
+        for sess in completed_sessions:
+            agg = self.get_aggregated_evaluation(db, sess.id)
+            overall = agg.get("overall_score", 0)
+            scores.append(overall)
+            correctness.append(agg.get("overall_correctness", 0))
+            relevance.append(agg.get("overall_relevance", 0))
+            technical.append(agg.get("overall_technical_depth", 0))
+            communication.append(agg.get("overall_communication_quality", 0))
+            strengths.extend(agg.get("strengths", []))
+            weaknesses.extend(agg.get("weaknesses", []))
+            trend.append({"date": sess.created_at.isoformat(), "score": overall})
+            recent.append({
+                "id": sess.id,
+                "job_role": sess.job_role,
+                "interview_type": sess.interview_type,
+                "difficulty": sess.difficulty,
+                "score": overall,
+                "status": sess.status,
+                "date": sess.created_at.isoformat(),
+            })
+
+        trend.sort(key=lambda x: x["date"])
+        recent = recent[:5]
+
+        avg_score = round(sum(scores) / len(scores), 1) if scores else None
+        best_score = max(scores) if scores else None
+        latest_score = scores[0] if scores else None
+        avg_correctness = round(sum(correctness) / len(correctness), 3) if correctness else None
+        avg_relevance = round(sum(relevance) / len(relevance), 3) if relevance else None
+        avg_technical = round(sum(technical) / len(technical), 3) if technical else None
+        avg_communication = round(sum(communication) / len(communication), 3) if communication else None
+
+        unique_strengths = list(dict.fromkeys(strengths))
+        unique_weaknesses = list(dict.fromkeys(weaknesses))
+
+        return {
+            "total_interviews": total,
+            "completed_interviews": len(completed_sessions),
+            "in_progress_interviews": in_progress,
+            "average_score": avg_score,
+            "best_score": best_score,
+            "latest_score": latest_score,
+            "average_correctness": avg_correctness,
+            "average_relevance": avg_relevance,
+            "average_technical_depth": avg_technical,
+            "average_communication_quality": avg_communication,
+            "strengths": unique_strengths,
+            "weaknesses": unique_weaknesses,
+            "trend": trend,
+            "recent_interviews": recent,
+        }
+

@@ -28,3 +28,4 @@ api.interceptors.request.use(
 );
 
 export default api;
+export const fetchAnalytics = () => api.get('/analytics');

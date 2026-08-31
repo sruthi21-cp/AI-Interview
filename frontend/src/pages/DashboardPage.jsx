@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import api from '../services/api';
+import { ResponsiveContainer, LineChart, Line, CartesianGrid, XAxis, YAxis, Tooltip } from 'recharts';
+import { fetchAnalytics } from '../services/api';
 
 /* ── Status badge ──────────────────────────────────────── */
 function StatusBadge({ status }) {
@@ -37,10 +39,13 @@ export default function DashboardPage() {
   const [interviews, setInterviews] = useState([]);
   const [loading, setLoading]       = useState(true);
   const [error, setError]           = useState('');
+  const [analytics, setAnalytics]   = useState(null);
+  const [loadingAnalytics, setLoadingAnalytics] = useState(true);
+  const [errorAnalytics, setErrorAnalytics] = useState('');
 
-  /* ── Fetch interviews on mount ───────────────────── */
+  /* ── Fetch data on mount ───────────────────── */
   useEffect(() => {
-    (async () => {
+    const fetchData = async () => {
       try {
         const { data } = await api.get('/interviews/');
         setInterviews(data.interviews || []);
@@ -53,7 +58,20 @@ export default function DashboardPage() {
       } finally {
         setLoading(false);
       }
-    })();
+      try {
+        const { data: analyticsData } = await fetchAnalytics();
+        setAnalytics(analyticsData);
+      } catch (err) {
+        if (err?.response?.status === 401) {
+          navigate('/login');
+        } else {
+          setErrorAnalytics('Failed to load analytics.');
+        }
+      } finally {
+        setLoadingAnalytics(false);
+      }
+    };
+    fetchData();
   }, [navigate]);
 
   /* ── Derived stats ───────────────────────────────── */
@@ -86,7 +104,7 @@ export default function DashboardPage() {
 
   /* ═══════════ RENDER ═════════════════════════════════ */
 
-  if (loading) {
+  if (loading || loadingAnalytics) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[50vh] space-y-4">
         <div className="w-10 h-10 rounded-full border-2 border-emerald-500/30 border-t-emerald-500 animate-spin" />
@@ -119,10 +137,96 @@ export default function DashboardPage() {
         <StatCard label="In Progress" value={inProgressCount} />
       </div>
 
+      {/* ── Analytics Overview ───────────────────── */}
+      {analytics && (
+        <div className="mt-8 space-y-6">
+          <h2 className="text-xl font-semibold text-white">Analytics Overview</h2>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <StatCard label="Completed" value={analytics.completed_interviews} />
+            <StatCard label="Average Score" value={analytics.average_score ?? '--'} />
+            <StatCard label="Best Score" value={analytics.best_score ?? '--'} />
+            <StatCard label="Latest Score" value={analytics.latest_score ?? '--'} />
+            <StatCard label="Avg Correctness" value={analytics.average_correctness ?? '--'} />
+            <StatCard label="Avg Relevance" value={analytics.average_relevance ?? '--'} />
+          </div>
+
+          {/* Performance Breakdown */}
+          <div className="bg-slate-900/80 border border-slate-800 rounded-2xl p-4 backdrop-blur-sm">
+            <h3 className="text-lg font-medium text-white mb-2">Performance Breakdown</h3>
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+              <StatCard label="Technical" value={analytics.average_technical_depth ?? '--'} />
+              <StatCard label="Communication" value={analytics.average_communication_quality ?? '--'} />
+            </div>
+          </div>
+
+          {/* Score Trend Line Chart */}
+          <div className="bg-slate-900/80 border border-slate-800 rounded-2xl p-4 backdrop-blur-sm">
+            <h3 className="text-lg font-medium text-white mb-2">Score Trend</h3>
+            <ResponsiveContainer width="100%" height={300}>
+              <LineChart data={analytics.trend}>
+                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.1)" />
+                <XAxis dataKey="date" stroke="rgba(255,255,255,0.6)" />
+                <YAxis domain={[0, 10]} stroke="rgba(255,255,255,0.6)" />
+                <Tooltip contentStyle={{ backgroundColor: '#1e1e1e', border: 'none' }} labelStyle={{ color: '#fff' }} />
+                <Line type="monotone" dataKey="score" stroke="#34d399" strokeWidth={2} dot={{ r: 3 }} />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+
+          {/* Strengths & Weaknesses */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="bg-slate-900/80 border border-slate-800 rounded-2xl p-4 backdrop-blur-sm">
+              <h3 className="text-lg font-medium text-white mb-2">Top Strengths</h3>
+              <ul className="list-disc list-inside text-sm text-slate-300 space-y-1">
+                {analytics.strengths && analytics.strengths.length > 0 ? analytics.strengths.slice(0, 5).map((s, i) => (
+                  <li key={i}>{s}</li>
+                )) : <li>No strengths recorded.</li>}
+              </ul>
+            </div>
+            <div className="bg-slate-900/80 border border-slate-800 rounded-2xl p-4 backdrop-blur-sm">
+              <h3 className="text-lg font-medium text-white mb-2">Top Weaknesses</h3>
+              <ul className="list-disc list-inside text-sm text-slate-300 space-y-1">
+                {analytics.weaknesses && analytics.weaknesses.length > 0 ? analytics.weaknesses.slice(0, 5).map((w, i) => (
+                  <li key={i}>{w}</li>
+                )) : <li>No weaknesses recorded.</li>}
+              </ul>
+            </div>
+          </div>
+
+          {/* Recent Interviews */}
+          <div className="bg-slate-900/80 border border-slate-800 rounded-2xl p-4 backdrop-blur-sm">
+            <h3 className="text-lg font-medium text-white mb-2">Recent Interviews</h3>
+            <table className="w-full text-left border-collapse">
+              <thead>
+                <tr className="bg-slate-950/50 text-slate-400 text-xs font-semibold uppercase tracking-wider">
+                  <th className="px-4 py-2">Role</th>
+                  <th className="px-4 py-2">Date</th>
+                  <th className="px-4 py-2">Score</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-800/60 text-slate-300 text-sm">
+                {analytics.recent_interviews && analytics.recent_interviews.map((r) => (
+                  <tr key={r.id} className="hover:bg-slate-800/40">
+                    <td className="px-4 py-2">{r.job_role}</td>
+                    <td className="px-4 py-2">{new Date(r.date).toLocaleDateString()}</td>
+                    <td className="px-4 py-2 font-medium text-emerald-400">{r.score}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
       {/* ── Error ──────────────────────────────── */}
       {error && (
         <div className="bg-rose-500/10 border border-rose-500/30 rounded-xl px-6 py-4">
           <p className="text-rose-400 text-sm">{error}</p>
+        </div>
+      )}
+      {errorAnalytics && (
+        <div className="bg-rose-500/10 border border-rose-500/30 rounded-xl px-6 py-4 mt-4">
+          <p className="text-rose-400 text-sm">{errorAnalytics}</p>
         </div>
       )}
 

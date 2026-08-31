@@ -1,18 +1,12 @@
-from typing import Any, Dict, Optional
-from fastapi import APIRouter, Depends, HTTPException, status, Body, File, Form, UploadFile
-from sqlalchemy.orm import Session
-
-from app.api import deps
-from app.models.user import User as UserModel
-from app.models.interview_session import InterviewSession
-from app.utils.pdf_extractor import extract_text_from_pdf
 from app.schemas.interview import (
     InterviewSessionCreate,
     InterviewSessionResponse,
     InterviewSessionListResponse,
 )
 from app.services.interview_engine import InterviewEngine
-
+from fastapi import APIRouter, Depends, HTTPException, status, Body, File, Form, UploadFile
+from app.api import deps
+from app.models.user import User as UserModel
 router = APIRouter()
 
 engine = InterviewEngine()
@@ -126,6 +120,14 @@ def list_interviews(
         .all()
     )
     return {"interviews": interviews, "total": len(interviews)}
+
+@router.get("/analytics", response_model=Dict, status_code=status.HTTP_200_OK)
+def get_user_analytics(
+    db: Session = Depends(deps.get_db),
+    current_user: UserModel = Depends(deps.get_current_user),
+) -> Any:
+    """Return aggregated analytics for the current user across all interview sessions."""
+    return engine.get_user_analytics(db, current_user.id)
 
 @router.get("/{interview_id}", response_model=InterviewSessionResponse)
 def get_interview(
