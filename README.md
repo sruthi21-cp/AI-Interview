@@ -66,7 +66,7 @@ AI Coach & Analytics (Strict User Data Isolation)
 - **Customized Setup:** Configure interview type (Technical, HR, Mixed, Behavioral), experience level (Beginner, Intermediate, Advanced), difficulty (Easy, Medium, Hard), language (English, Spanish, French, German, etc.), and question count (3, 5, 10, 15).
 - **Target Job Description Context:** Paste target job descriptions (up to 2,000 characters) to align questions with real job postings.
 - **Hybrid RAG Knowledge Grounding:** Uses 15 domain-specific technical knowledge modules (Python, React, Docker, FastAPI, PostgreSQL, JavaScript, Node.js, CSS, AWS, Git, Java, MongoDB, Spring, TypeScript, Fallback) to ground technical questions.
-- **Resilient AI Provider Infrastructure:** Supports Google Gemini (`gemini-1.5-flash`), OpenAI (`gpt-4o`/`gpt-3.5-turbo`), and an automatic offline `MockProvider` fallback if API quotas or keys are unavailable.
+- **Resilient AI Provider Infrastructure:** Supports Google Gemini (`gemini-2.5-flash` by default), OpenAI (`gpt-4o-mini` by default; override either with `AI_MODEL`), and an automatic offline `MockProvider` fallback if API quotas or keys are unavailable.
 - **Voice System:** Integrated browser-native Speech-to-Text (`webkitSpeechRecognition`) for hands-free answer input and Text-to-Speech (`window.speechSynthesis`) for question narration.
 - **Evidence-Based Evaluation:** Multi-dimensional feedback scoring each answer from 0.0 to 10.0 across Overall Score, Correctness, Relevance, Technical Depth, and Communication Quality, complete with key strengths and weaknesses.
 - **Adaptive Question Flow:** Dynamically calculates next-question difficulty based on recent answer performance (e.g., strong answers trigger deeper questions, weak answers trigger reinforcement questions).
@@ -422,4 +422,10 @@ docker compose up -d
 | **CORS policy error in browser console** | Frontend origin missing from backend CORS list | Add frontend origin (e.g. `http://localhost:3000`) to `CORS_ORIGINS` in `.env`. |
 | **Microphone speech-to-text not capturing** | Browser permission denied or HTTP origin | Grant microphone permissions in browser settings. Note that Web Speech API requires HTTPS or `localhost`. |
 | **Database missing column errors** | Schema updated between code versions | Backend automatically runs `run_auto_migrations(engine)` on startup. Alternatively, run `python backend/migrate_db.py`. |
-| **AI Question generation fallback to mock** | Invalid or missing `AI_API_KEY` | Set `AI_PROVIDER=gemini` and valid `AI_API_KEY` in `.env`. If key fails, system gracefully falls back to mock questions without crashing. |
+| **AI Question generation fallback to mock** | Invalid or missing `AI_API_KEY`, or an `AI_MODEL` your key can't use | Set `AI_PROVIDER=gemini`, a valid `AI_API_KEY`, and a valid `AI_MODEL` (or leave it empty for the default) in `.env`. Check `GET /health` (the `ai` field) and look for `Falling back to mock output` in the backend log, which includes the HTTP status. |
+
+---
+
+## License
+
+This project is licensed under the [Apache License 2.0](LICENSE).
