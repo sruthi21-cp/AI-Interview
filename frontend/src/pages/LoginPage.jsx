@@ -1,25 +1,38 @@
 import React, { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useLocation } from 'react-router-dom';
 import api from '../services/api';
 import { IconSparkles, IconEye, IconEyeOff, IconLock, IconShield } from '../components/Icons';
 import Button from '../components/Button';
 
 export default function LoginPage() {
-  const [email, setEmail] = useState('');
+  const navigate = useNavigate();
+  const location = useLocation();
+  const [email, setEmail] = useState(location.state?.email || '');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
-  const navigate = useNavigate();
+  const successMsg = location.state?.registered ? 'Account created successfully! Please sign in.' : '';
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
+
+    const cleanEmail = email.trim();
+    if (!cleanEmail) {
+      setError('Please enter your email address.');
+      return;
+    }
+    if (!password) {
+      setError('Please enter your password.');
+      return;
+    }
+
     setLoading(true);
     try {
       // Call backend OAuth2 form-urlencoded endpoint
       const formData = new URLSearchParams();
-      formData.append('username', email.trim());
+      formData.append('username', cleanEmail);
       formData.append('password', password);
 
       const response = await api.post('/auth/login', formData, {
@@ -30,12 +43,20 @@ export default function LoginPage() {
       localStorage.setItem('token', access_token);
       navigate('/dashboard');
     } catch (err) {
-      const detail = err.response?.data?.detail;
-      setError(
-        typeof detail === 'string'
-          ? detail
-          : 'Authentication failed. Please check your credentials.'
-      );
+      if (err.response?.data?.detail) {
+        const detail = err.response.data.detail;
+        if (typeof detail === 'string') {
+          setError(detail);
+        } else if (Array.isArray(detail)) {
+          setError(detail.map((d) => d.msg || JSON.stringify(d)).join(', '));
+        } else {
+          setError('Authentication failed. Please check your credentials.');
+        }
+      } else if (!err.response) {
+        setError('Cannot connect to the backend server. Please verify the backend service is running on port 8000.');
+      } else {
+        setError('Authentication failed. Please check your credentials.');
+      }
     } finally {
       setLoading(false);
     }
@@ -50,6 +71,14 @@ export default function LoginPage() {
           Sign in to access your interview dashboard & evaluations.
         </p>
       </div>
+
+      {/* Success Alert if redirected from register */}
+      {successMsg && !error && (
+        <div className="p-3.5 text-sm bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 rounded-xl flex items-center gap-2.5">
+          <span className="w-2 h-2 rounded-full bg-emerald-400 flex-shrink-0" />
+          <span>{successMsg}</span>
+        </div>
+      )}
 
       {/* Error Alert */}
       {error && (

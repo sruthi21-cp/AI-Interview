@@ -238,14 +238,14 @@ def send_password_reset_email(
     try:
         if settings.SMTP_USE_TLS:
             context = ssl.create_default_context()
-            with smtplib.SMTP(settings.SMTP_HOST, settings.SMTP_PORT) as server:
+            with smtplib.SMTP(settings.SMTP_HOST, settings.SMTP_PORT, timeout=10) as server:
                 server.ehlo()
                 server.starttls(context=context)
                 if settings.SMTP_USERNAME:
                     server.login(settings.SMTP_USERNAME, settings.SMTP_PASSWORD or "")
                 server.sendmail(settings.SMTP_FROM_EMAIL, to_email, msg.as_string())
         else:
-            with smtplib.SMTP(settings.SMTP_HOST, settings.SMTP_PORT) as server:
+            with smtplib.SMTP(settings.SMTP_HOST, settings.SMTP_PORT, timeout=10) as server:
                 if settings.SMTP_USERNAME:
                     server.login(settings.SMTP_USERNAME, settings.SMTP_PASSWORD or "")
                 server.sendmail(settings.SMTP_FROM_EMAIL, to_email, msg.as_string())

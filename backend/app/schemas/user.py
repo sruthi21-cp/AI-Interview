@@ -7,7 +7,15 @@ class UserBase(BaseModel):
     is_active: Optional[bool] = True
 
 class UserCreate(UserBase):
-    password: str
+    password: str = Field(..., min_length=6, description="Password must be at least 6 characters")
+
+    @field_validator("email")
+    @classmethod
+    def validate_email(cls, v: str) -> str:
+        v = v.strip().lower()
+        if not v or "@" not in v:
+            raise ValueError("A valid email address is required")
+        return v
 
 class UserUpdate(UserBase):
     password: Optional[str] = None

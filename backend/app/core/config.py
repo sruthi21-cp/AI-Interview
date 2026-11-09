@@ -1,6 +1,12 @@
+import os
 from typing import Union, List
 from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+_backend_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+_root_dir = os.path.dirname(_backend_dir)
+_backend_env = os.path.join(_backend_dir, ".env")
+_root_env = os.path.join(_root_dir, ".env")
 
 class Settings(BaseSettings):
     PROJECT_NAME: str = "AI Interview Simulator"
@@ -13,6 +19,8 @@ class Settings(BaseSettings):
     AI_PROVIDER: str = "mock"
     AI_API_KEY: str | None = None
     AI_MODEL: str | None = None
+    GEMINI_API_KEY: str | None = None
+    OPENAI_API_KEY: str | None = None
 
     # Email / SMTP settings (optional — if not set, reset URL is logged to console)
     SMTP_HOST: str | None = None
@@ -26,12 +34,23 @@ class Settings(BaseSettings):
     PASSWORD_RESET_TOKEN_EXPIRE_MINUTES: int = 30
     FRONTEND_URL: str = "http://localhost:3000"
 
-    # Configurable CORS allowed origins (defaults to common local dev origins)
+    # Configurable CORS allowed origins (defaults to common local and LAN dev origins)
     CORS_ORIGINS: Union[List[str], str] = [
         "http://localhost:3000",
+        "http://localhost:3001",
         "http://127.0.0.1:3000",
+        "http://127.0.0.1:3001",
         "http://localhost:5173",
+        "http://localhost:5174",
         "http://127.0.0.1:5173",
+        "http://127.0.0.1:5174",
+        "http://localhost:80",
+        "http://127.0.0.1:80",
+        "http://10.10.16.195:3000",
+        "http://10.10.16.195:3001",
+        "http://10.10.16.195:5173",
+        "http://10.10.16.195:80",
+        "http://10.10.16.195",
     ]
 
     @field_validator("CORS_ORIGINS", mode="before")
@@ -57,14 +76,26 @@ class Settings(BaseSettings):
     def model_post_init(self, __context):
         if self.JWT_SECRET and self.SECRET_KEY == "local_development_only_secret_key_1234567890":
             self.SECRET_KEY = self.JWT_SECRET
+        if not self.AI_API_KEY:
+            if self.GEMINI_API_KEY:
+                self.AI_API_KEY = self.GEMINI_API_KEY
+            elif self.OPENAI_API_KEY:
+                self.AI_API_KEY = self.OPENAI_API_KEY
+        if not self.AI_MODEL:
+            prov = (self.AI_PROVIDER or "").lower().strip()
+            if prov == "gemini":
+                self.AI_MODEL = "gemini-3.5-flash"
+            elif prov == "openai":
+                self.AI_MODEL = "gpt-4o-mini"
 
     model_config = SettingsConfigDict(
-        env_file=".env",
+        env_file=(".env", _backend_env, _root_env),
         env_file_encoding="utf-8",
         case_sensitive=True,
         extra="ignore"
     )
 
 settings = Settings()
+
 
 

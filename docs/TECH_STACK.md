@@ -89,9 +89,9 @@ A comprehensive technical inventory documenting every technology, framework, lib
 ## 4. AI & Hybrid RAG Layer
 
 ### Multi-Provider LLM Client (`app/services/ai.py`)
-- **WHAT:** Abstract AI service supporting Google Gemini (`gemini-1.5-flash`), OpenAI (`gpt-4o`/`gpt-3.5-turbo`), and `MockProvider`.
-- **WHY:** Guarantees platform availability even if external AI provider credentials expire, hit rate limits, or suffer network timeouts.
-- **WHERE USED:** `backend/app/services/ai.py`.
+- **WHAT:** Abstract, unified AI service supporting Google Gemini (`gemini-2.5-flash` / `gemini-3.5-flash`), OpenAI (`gpt-4o-mini`), and deterministic `MockProvider` fallback.
+- **WHY:** Dispatches requests securely via `x-goog-api-key` header (never putting secrets in URL query parameters), enforces hard relevance gates, and guarantees platform availability even if cloud API quotas or network timeouts occur.
+- **WHERE USED:** `backend/app/services/ai.py`, `backend/app/services/resume_parser.py`, and `backend/app/services/rag_coach.py`.
 
 ### Local Knowledge RAG Engine (`LocalKnowledgeRetriever`)
 - **WHAT:** Offline Retrieval-Augmented Generation (RAG) engine that loads curated JSON technical records.

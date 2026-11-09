@@ -313,13 +313,15 @@ class ResumeParserService:
             f"}}\n"
         )
 
-        if self.ai_provider.provider_name == "gemini":
-            url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={self.ai_provider.api_key}"
-            headers = {"Content-Type": "application/json"}
-            body = {
-                "contents": [{"parts": [{"text": prompt}]}],
-                "generationConfig": {"responseMimeType": "application/json"}
-            }
-            res = self.ai_provider._post_request(url, body, headers)
-            return json.loads(res)
+        if self.ai_provider and self.ai_provider.is_real_llm:
+            try:
+                data = self.ai_provider._call_llm_json(
+                    prompt,
+                    system="You are an expert technical resume parser. Return structured JSON only.",
+                    timeout=20,
+                )
+                if isinstance(data, dict):
+                    return data
+            except Exception as e:
+                logger.warning("AI resume profile extraction failed: %s", e)
         return None

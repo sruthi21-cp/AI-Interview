@@ -1,11 +1,24 @@
 import axios from 'axios';
 
-// Dynamically resolve the backend host so the frontend works whether
-// accessed via localhost or a LAN IP (e.g. 10.20.17.183).
-const backendBase =
-  import.meta.env.VITE_API_BASE_URL ||
-  import.meta.env.VITE_API_URL ||
-  `http://${window.location.hostname}:8000/api/v1`;
+// Dynamically resolve the backend host so the frontend works seamlessly
+// through Vite proxy (/api/v1), Nginx in production, or direct backend access.
+const resolveBackendBase = () => {
+  if (import.meta.env.VITE_API_BASE_URL) {
+    return import.meta.env.VITE_API_BASE_URL;
+  }
+  if (import.meta.env.VITE_API_URL) {
+    return import.meta.env.VITE_API_URL;
+  }
+  // When running in a browser, use relative /api/v1 so requests are forwarded via
+  // the Vite dev server proxy (or Nginx reverse proxy). This completely avoids
+  // cross-origin (CORS) preflight failures, network firewall blocking, and IP mismatches.
+  if (typeof window !== 'undefined') {
+    return '/api/v1';
+  }
+  return 'http://127.0.0.1:8000/api/v1';
+};
+
+const backendBase = resolveBackendBase();
 
 const api = axios.create({
   baseURL: backendBase,
@@ -33,7 +46,13 @@ api.interceptors.response.use(
   (error) => {
     if (error.response && error.response.status === 401) {
       const url = error.config ? error.config.url || '' : '';
-      if (!url.includes('/auth/login') && !url.includes('/auth/register')) {
+      const isAuthEndpoint =
+        url.includes('/auth/login') ||
+        url.includes('/auth/register') ||
+        url.includes('/auth/forgot-password') ||
+        url.includes('/auth/reset-password');
+
+      if (!isAuthEndpoint) {
         localStorage.removeItem('token');
         if (window.location.pathname !== '/login') {
           window.location.href = '/login';

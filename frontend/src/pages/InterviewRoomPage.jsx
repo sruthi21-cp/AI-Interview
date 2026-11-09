@@ -28,38 +28,90 @@ function formatTime(seconds) {
 }
 
 /* ── Mic Permission Banner ───────────────────────────────────── */
-function MicPermissionBanner({ status, onRequest }) {
-  if (status === 'granted' || status === 'checking' || status === 'unsupported') return null;
+function MicPermissionBanner({ status, isSecureContext, onRequest }) {
+  if (status === 'granted') {
+    return (
+      <div className="p-3 bg-emerald-500/10 border border-emerald-500/20 rounded-xl text-xs text-emerald-300 flex items-center justify-between gap-3 shadow-sm">
+        <div className="flex items-center gap-2">
+          <IconMic className="w-4 h-4 text-emerald-400 flex-shrink-0" />
+          <span className="font-medium">Microphone is active and ready for voice answers.</span>
+        </div>
+        <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+          Voice Enabled
+        </span>
+      </div>
+    );
+  }
+
+  if (status === 'insecure-context' || !isSecureContext) {
+    const isLocalhost =
+      typeof window !== 'undefined' &&
+      (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
+
+    return (
+      <div className="p-3.5 bg-amber-500/10 border border-amber-500/30 rounded-xl text-xs text-amber-300 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-sm">
+        <div className="flex items-start gap-2.5">
+          <IconMicOff className="w-4 h-4 text-amber-400 flex-shrink-0 mt-0.5" />
+          <div className="space-y-0.5">
+            <p className="font-semibold text-amber-200">Secure Context Required for Voice</p>
+            <p className="text-amber-300/80">
+              Web browsers require a Secure Context (HTTPS or localhost) to access the microphone. You can type your answer below, or open this interview via localhost for voice input.
+            </p>
+          </div>
+        </div>
+        {!isLocalhost && typeof window !== 'undefined' && (
+          <a
+            href={`${window.location.protocol}//localhost:${window.location.port}${window.location.pathname}`}
+            className="px-3 py-1.5 rounded-lg bg-amber-500/20 border border-amber-500/40 text-amber-200 hover:bg-amber-500/30 font-semibold text-xs transition-colors flex items-center justify-center gap-1.5 flex-shrink-0 self-end sm:self-center"
+          >
+            <span>Open in Localhost</span>
+            <IconArrowRight className="w-3.5 h-3.5" />
+          </a>
+        )}
+      </div>
+    );
+  }
 
   if (status === 'denied') {
     return (
-      <div className="p-4 bg-rose-500/10 border border-rose-500/30 rounded-xl text-xs text-rose-300 flex items-start gap-3">
-        <IconMicOff className="w-4 h-4 flex-shrink-0 mt-0.5" />
-        <div className="space-y-1">
-          <p className="font-semibold">Microphone access is required for voice answers.</p>
-          <p className="text-rose-400/80">
-            Please allow microphone access in your browser settings (click the lock icon in the
-            address bar → Site permissions → Microphone → Allow), then refresh the page.
-          </p>
-          <p className="text-rose-400/70 mt-1">
-            You can still type your answer below — the interview will continue normally.
-          </p>
+      <div className="p-3.5 bg-slate-800/80 border border-slate-700/60 rounded-xl text-xs text-slate-300 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-sm">
+        <div className="flex items-start gap-2.5">
+          <IconMicOff className="w-4 h-4 text-slate-400 flex-shrink-0 mt-0.5" />
+          <div className="space-y-0.5">
+            <div className="flex items-center gap-2">
+              <span className="font-semibold text-slate-200">Microphone Access Currently Blocked</span>
+              <span className="px-2 py-0.5 rounded text-[10px] font-medium bg-slate-700/50 text-slate-300 border border-slate-600/40">
+                Text Mode Active
+              </span>
+            </div>
+            <p className="text-slate-400">
+              To record voice answers, allow microphone in your address bar (click the lock/settings icon → Allow), then click Allow / Test Mic. You can also type your answer below.
+            </p>
+          </div>
         </div>
+        <button
+          type="button"
+          onClick={onRequest}
+          className="px-3.5 py-1.5 rounded-lg bg-primary-600/20 border border-primary-500/30 text-primary-300 hover:bg-primary-600/30 font-semibold text-xs transition-colors flex items-center justify-center gap-1.5 flex-shrink-0 self-end sm:self-center"
+        >
+          <IconRefresh className="w-3.5 h-3.5" />
+          <span>Allow / Test Mic</span>
+        </button>
       </div>
     );
   }
 
   if (status === 'prompt') {
     return (
-      <div className="p-3.5 bg-amber-500/10 border border-amber-500/30 rounded-xl text-xs text-amber-300 flex items-center justify-between gap-3">
+      <div className="p-3 bg-primary-950/40 border border-primary-500/30 rounded-xl text-xs text-primary-200 flex items-center justify-between gap-3 shadow-sm">
         <div className="flex items-center gap-2">
-          <IconMic className="w-4 h-4 flex-shrink-0" />
-          <span>Grant microphone permission for voice answers.</span>
+          <IconMic className="w-4 h-4 text-accent-cyan flex-shrink-0" />
+          <span>Microphone is available. Click Allow Mic to enable voice answers, or start recording below.</span>
         </div>
         <button
           type="button"
           onClick={onRequest}
-          className="px-3 py-1.5 rounded-lg bg-amber-500/20 border border-amber-500/40 text-amber-200 font-semibold text-xs hover:bg-amber-500/30 transition-colors flex-shrink-0"
+          className="px-3.5 py-1.5 rounded-lg bg-primary-600/30 border border-primary-500/40 text-accent-cyan font-semibold text-xs hover:bg-primary-600/40 transition-colors flex-shrink-0"
         >
           Allow Mic
         </button>
@@ -72,134 +124,120 @@ function MicPermissionBanner({ status, onRequest }) {
 
 /* ── Voice Control Panel ─────────────────────────────────────── */
 function VoiceControlPanel({
-  voiceState,
-  error,
-  lowQualityWarning,
+  isContinuousActive,
+  isListening,
   interimText,
   recordingSeconds,
   isSupported,
-  micPermissionStatus,
+  isSecureContext,
+  error,
+  lowQualityWarning,
   onStart,
   onStop,
-  onRetry,
-  onTypeInstead,
-  showTypeInstead,
 }) {
   if (!isSupported) {
     return (
-      <div className="p-3 bg-amber-500/10 border border-amber-500/20 rounded-xl text-xs text-amber-300">
-        Voice input is not supported in this browser. Please use Chrome or Edge.
+      <div className="p-3 bg-amber-500/10 border border-amber-500/20 rounded-xl text-xs text-amber-300 flex items-center gap-2">
+        <IconMicOff className="w-4 h-4 flex-shrink-0" />
+        <span>Voice speech recognition is not supported in this browser. Please use Chrome or Edge for voice answers.</span>
       </div>
     );
   }
 
-  if (micPermissionStatus === 'denied') {
+  if (!isSecureContext) {
     return (
-      <div className="text-xs text-slate-500 italic px-1">
-        Microphone access denied — using text input only.
+      <div className="p-3 bg-amber-500/10 border border-amber-500/20 rounded-xl text-xs text-amber-300 flex items-center justify-between gap-3">
+        <div className="flex items-center gap-2">
+          <IconMicOff className="w-4 h-4 flex-shrink-0" />
+          <span>Voice recording requires a Secure Context (HTTPS or localhost).</span>
+        </div>
       </div>
     );
   }
 
   return (
     <div className="space-y-3">
-      {/* State-specific controls */}
-      {voiceState === VOICE_STATES.IDLE && (
-        <button
-          type="button"
-          id="btn-start-recording"
-          onClick={onStart}
-          className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-semibold glass-panel hover:bg-white/10 text-slate-200 border-white/15 transition-all hover:border-primary-500/40"
-        >
-          <IconMic className="w-4 h-4 text-accent-cyan" />
-          <span>🎤 Start Recording</span>
-        </button>
-      )}
+      {/* Active Continuous Voice Mode */}
+      {isContinuousActive ? (
+        <div className="p-4 rounded-xl bg-emerald-500/10 border border-emerald-500/30 shadow-lg space-y-3">
+          <div className="flex items-center justify-between gap-3 flex-wrap">
+            <div className="flex items-center gap-3">
+              {/* Pulsing Green Indicator */}
+              <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 text-xs font-semibold">
+                <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-ping" />
+                <span>Continuous Voice Active</span>
+                <span className="font-mono font-bold text-emerald-200">{formatTime(recordingSeconds)}</span>
+              </div>
 
-      {voiceState === VOICE_STATES.LISTENING && (
-        <div className="flex items-center gap-3 flex-wrap">
-          {/* Animated recording indicator */}
-          <div className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-rose-500/15 border border-rose-500/40 text-rose-300 text-xs font-semibold animate-pulse">
-            <span className="w-2.5 h-2.5 rounded-full bg-rose-500 animate-ping" />
-            <span>🔴 Recording...</span>
-            <span className="font-mono text-rose-400">{formatTime(recordingSeconds)}</span>
-          </div>
+              {/* Animated audio wave bars */}
+              <div className="flex items-center gap-1 h-4">
+                <span className="w-1 bg-emerald-400 rounded-full animate-pulse h-3" />
+                <span className="w-1 bg-emerald-400 rounded-full animate-pulse h-4" />
+                <span className="w-1 bg-emerald-400 rounded-full animate-pulse h-2" />
+                <span className="w-1 bg-emerald-400 rounded-full animate-pulse h-4" />
+                <span className="w-1 bg-emerald-400 rounded-full animate-pulse h-3" />
+              </div>
+            </div>
 
-          {/* Stop button */}
-          <button
-            type="button"
-            id="btn-stop-recording"
-            onClick={onStop}
-            className="px-4 py-2 rounded-xl bg-rose-600/20 border border-rose-500/50 text-rose-200 text-xs font-bold hover:bg-rose-600/30 transition-colors"
-          >
-            ⏹ Stop
-          </button>
-
-          {/* Live interim text */}
-          {interimText && (
-            <p className="text-xs italic text-slate-400 max-w-sm truncate">
-              {interimText}
-            </p>
-          )}
-        </div>
-      )}
-
-      {voiceState === VOICE_STATES.STOPPING && (
-        <div className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs font-semibold">
-          <span className="animate-spin">⏳</span>
-          <span>Converting speech to text...</span>
-        </div>
-      )}
-
-      {voiceState === VOICE_STATES.TRANSCRIPT_READY && (
-        <div className="flex items-center gap-3 flex-wrap">
-          <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-xs font-semibold">
-            <span className="w-2 h-2 rounded-full bg-emerald-400" />
-            Transcript ready
-          </div>
-          <button
-            type="button"
-            onClick={onRetry}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-white/5 border border-white/10 text-slate-300 hover:bg-white/10 transition-colors"
-          >
-            <IconRefresh className="w-3.5 h-3.5" />
-            Re-record
-          </button>
-        </div>
-      )}
-
-      {voiceState === VOICE_STATES.ERROR && (
-        <div className="space-y-2">
-          <div className="p-3 bg-rose-500/10 border border-rose-500/30 text-rose-300 rounded-xl text-xs flex items-start gap-2">
-            <span className="w-2 h-2 rounded-full bg-rose-400 flex-shrink-0 mt-1" />
-            <span>{error || 'Speech recognition failed.'}</span>
-          </div>
-          <div className="flex items-center gap-2 flex-wrap">
+            {/* Stop Voice Recording Button */}
             <button
               type="button"
-              id="btn-retry-recording"
-              onClick={onRetry}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-primary-600/20 border border-primary-500/30 text-primary-300 hover:bg-primary-600/30 transition-colors"
+              id="btn-stop-recording"
+              onClick={onStop}
+              className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-xl bg-rose-600/90 hover:bg-rose-600 text-white text-xs font-bold border border-rose-500/50 shadow-md transition-all"
             >
-              <IconRefresh className="w-3.5 h-3.5" />
-              🔄 Retry Recording
+              <span className="w-2.5 h-2.5 rounded-sm bg-white" />
+              <span>Stop Voice Recording</span>
             </button>
-            {!showTypeInstead && (
-              <button
-                type="button"
-                id="btn-type-instead"
-                onClick={onTypeInstead}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-white/5 border border-white/10 text-slate-300 hover:bg-white/10 transition-colors"
-              >
-                ✏️ Type Answer Instead
-              </button>
-            )}
           </div>
+
+          {/* Live interim text preview */}
+          {interimText && (
+            <div className="p-2.5 rounded-lg bg-black/40 border border-emerald-500/20 text-xs text-accent-cyan italic flex items-center gap-2">
+              <span className="w-1.5 h-1.5 rounded-full bg-accent-cyan animate-pulse flex-shrink-0" />
+              <span className="truncate">"{interimText}"</span>
+            </div>
+          )}
+
+          <p className="text-[11px] text-slate-400">
+            Microphone listening automatically across questions. Speak your answer, or edit the transcript below at any time.
+          </p>
+        </div>
+      ) : (
+        /* Stopped Voice Recording Mode */
+        <div className="p-3.5 rounded-xl bg-white/[0.02] border border-white/[0.08] flex items-center justify-between gap-3 flex-wrap">
+          <div className="flex items-center gap-2.5 text-xs text-slate-300">
+            <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-rose-500/10 border border-rose-500/20 text-rose-300 font-semibold text-[11px]">
+              <span className="w-2 h-2 rounded-full bg-rose-400" />
+              <span>Voice Recording Stopped</span>
+            </div>
+            <span className="text-slate-400 text-xs hidden sm:inline">
+              Click Start Voice Recording to enable hands-free voice answering for all questions.
+            </span>
+          </div>
+
+          <button
+            type="button"
+            id="btn-start-recording"
+            onClick={onStart}
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white shadow-md shadow-emerald-600/20 transition-all"
+          >
+            <IconMic className="w-3.5 h-3.5" />
+            <span>Start Voice Recording</span>
+          </button>
+        </div>
+      )}
+
+      {/* Error alert */}
+      {error && (
+        <div className="p-3 bg-rose-500/10 border border-rose-500/30 text-rose-300 rounded-xl text-xs flex items-start gap-2">
+          <span className="w-2 h-2 rounded-full bg-rose-400 flex-shrink-0 mt-1" />
+          <span>{error}</span>
         </div>
       )}
 
       {/* Low-quality warning (non-blocking) */}
-      {lowQualityWarning && voiceState !== VOICE_STATES.ERROR && (
+      {lowQualityWarning && !error && (
         <div className="p-3 bg-amber-500/10 border border-amber-500/30 text-amber-300 rounded-xl text-xs flex items-start gap-2">
           <span className="w-2 h-2 rounded-full bg-amber-400 flex-shrink-0 mt-1" />
           <span>{lowQualityWarning}</span>
@@ -226,9 +264,6 @@ export default function InterviewRoomPage() {
   const [fetchingQuestion, setFetchingQuestion] = useState(false);
   const [apiError, setApiError] = useState('');
 
-  /* voice UX */
-  const [showTypeInstead, setShowTypeInstead] = useState(false);
-
   /* progress tracking */
   const [questionNumber, setQuestionNumber] = useState(1);
   const [remainingTime, setRemainingTime] = useState(DEFAULT_INTERVIEW_DURATION_SECONDS);
@@ -237,7 +272,7 @@ export default function InterviewRoomPage() {
   const [isComplete, setIsComplete] = useState(false);
 
   /* Mic permission */
-  const { status: micPermissionStatus, requestPermission } = useMicPermission();
+  const { status: micPermissionStatus, isSecureContext, requestPermission } = useMicPermission();
 
   /* Question TTS narration */
   const {
@@ -260,66 +295,101 @@ export default function InterviewRoomPage() {
     voiceState,
     isSupported: isSpeechSupported,
     isListening,
+    isProcessing,
+    isContinuousActive,
     interimText,
     recordingSeconds,
     error: speechError,
     lowQualityWarning,
-    startListening,
-    stopListening,
-    resetVoice,
-    resetTranscript,
+    startContinuousVoice,
+    stopContinuousVoice,
+    toggleContinuousVoice,
+    resetQuestionTranscript,
+    syncEditedAnswer,
   } = useSpeechRecognition({
     onTranscript: handleTranscript,
     lang: interview?.interview_language || 'English',
   });
 
+  /* Handle global continuous voice toggle */
+  const handleToggleGlobalVoice = async () => {
+    if (isContinuousActive) {
+      stopContinuousVoice();
+    } else {
+      if (isQuestionSpeaking) stopQuestionNarration();
+      if (micPermissionStatus !== 'granted') {
+        const res = await requestPermission();
+        if (!res?.success && res?.error === 'insecure-context') {
+          return;
+        }
+      }
+      startContinuousVoice(answer);
+    }
+  };
+
   /* Handle voice start */
-  const handleStartVoice = () => {
+  const handleStartVoice = async () => {
     if (isQuestionSpeaking) stopQuestionNarration();
-    startListening(answer);
+    if (micPermissionStatus !== 'granted') {
+      const res = await requestPermission();
+      if (!res?.success && res?.error === 'insecure-context') {
+        return;
+      }
+    }
+    startContinuousVoice(answer);
   };
 
   /* Handle voice stop */
   const handleStopVoice = () => {
-    stopListening();
-  };
-
-  /* Handle retry */
-  const handleRetry = () => {
-    resetVoice();
-    setAnswer('');
-  };
-
-  /* Handle type-instead */
-  const handleTypeInstead = () => {
-    resetVoice();
-    setShowTypeInstead(true);
-    setAnswer('');
+    stopContinuousVoice();
   };
 
   /* Submit current answer */
   const submitCurrentAnswer = async () => {
-    if (!answer.trim() || submitting) return;
+    const answerToSubmit = answer.trim();
+    if (!answerToSubmit || submitting) return;
     setSubmitting(true);
     setApiError('');
 
-    stopListening();
-    stopQuestionNarration();
+    if (isQuestionSpeaking) stopQuestionNarration();
+
+    // Prepare transcript buffer for next question so any immediate speech is cleanly attributed to Question N+1
+    resetQuestionTranscript();
+    setAnswer('');
 
     try {
-      await api.post(`/interviews/${interviewId}/answer`, { answer: answer.trim() });
+      await api.post(`/interviews/${interviewId}/answer`, { answer: answerToSubmit });
       if (questionNumber >= (interview?.question_count || 0)) {
+        stopContinuousVoice();
         navigate(`/interview/${interviewId}/evaluation`);
       } else {
         setQuestionNumber((prev) => prev + 1);
         setQuestion(null);
-        setAnswer('');
-        resetVoice();
-        setShowTypeInstead(false);
       }
     } catch (err) {
-      const detail = err?.response?.data?.detail || 'Failed to submit answer.';
-      setApiError(typeof detail === 'string' ? detail : JSON.stringify(detail));
+      // Restore answer on failure so candidate doesn't lose text
+      setAnswer(answerToSubmit);
+      syncEditedAnswer(answerToSubmit);
+      let detailMsg = 'Failed to submit answer.';
+      if (err?.code === 'ECONNABORTED' || err?.message?.toLowerCase().includes('timeout')) {
+        detailMsg = 'Evaluation request timed out while generating your AI feedback. Your answer is preserved. Please click "Retry Submission" to try again.';
+      } else if (!err?.response) {
+        detailMsg = 'Network connection to backend server failed. Please verify the backend service is running and click "Retry Submission".';
+      } else if (err.response.data?.detail) {
+        const d = err.response.data.detail;
+        if (typeof d === 'string') {
+          detailMsg = d;
+        } else if (Array.isArray(d)) {
+          detailMsg = d.map((item) => item.msg || JSON.stringify(item)).join('; ');
+        } else {
+          detailMsg = JSON.stringify(d);
+        }
+      } else if (err.response.status === 404) {
+        detailMsg = 'Interview session not found or you do not have permission to access it.';
+      } else if (err.response.status >= 500) {
+        detailMsg = `Server error (${err.response.status}) occurred during evaluation. Your answer is preserved. Please click "Retry Submission".`;
+      }
+      setApiError(detailMsg);
     } finally {
       setSubmitting(false);
     }
@@ -366,6 +436,7 @@ export default function InterviewRoomPage() {
       setRemainingTime((prev) => {
         if (prev <= 1) {
           clearInterval(timerRef.current);
+          stopContinuousVoice();
           if (answer.trim()) {
             submitCurrentAnswer();
           } else {
@@ -378,15 +449,21 @@ export default function InterviewRoomPage() {
     }, 1000);
 
     return () => clearInterval(timerRef.current);
-  }, [interview, isComplete, answer, interviewId, navigate]);
+  }, [interview, isComplete, answer, interviewId, navigate, stopContinuousVoice]);
+
+  /* Unmount cleanup */
+  useEffect(() => {
+    return () => {
+      stopContinuousVoice();
+      stopQuestionNarration();
+    };
+  }, [stopContinuousVoice, stopQuestionNarration]);
 
   /* Fetch next question */
   const fetchNextQuestion = useCallback(async () => {
     if (!interviewId) return;
     setFetchingQuestion(true);
     setApiError('');
-    stopListening();
-    resetVoice();
     try {
       const { data } = await api.get(`/interviews/${interviewId}/next`);
       if (data && data.question) {
@@ -395,13 +472,14 @@ export default function InterviewRoomPage() {
         setApiError('No question data returned from backend.');
       }
       setAnswer('');
+      resetQuestionTranscript();
     } catch (err) {
       const detail = err?.response?.data?.detail || 'Failed to fetch next question.';
       setApiError(typeof detail === 'string' ? detail : JSON.stringify(detail));
     } finally {
       setFetchingQuestion(false);
     }
-  }, [interviewId, stopListening, resetVoice]);
+  }, [interviewId, resetQuestionTranscript]);
 
   useEffect(() => {
     if (interview && !question && !isComplete) fetchNextQuestion();
@@ -442,12 +520,6 @@ export default function InterviewRoomPage() {
   const questionCount = interview?.question_count || 1;
   const progressPercentage = Math.min((questionNumber / questionCount) * 100, 100);
 
-  /* Determine if voice panel should be shown */
-  const showVoicePanel =
-    isSpeechSupported &&
-    micPermissionStatus !== 'denied' &&
-    !showTypeInstead;
-
   return (
     <div className="max-w-4xl mx-auto space-y-6 pb-12">
       {/* Top Header Controls */}
@@ -455,7 +527,7 @@ export default function InterviewRoomPage() {
         <button
           type="button"
           onClick={() => {
-            stopListening();
+            stopContinuousVoice();
             stopQuestionNarration();
             navigate('/dashboard');
           }}
@@ -465,12 +537,86 @@ export default function InterviewRoomPage() {
           <span>Exit to Dashboard</span>
         </button>
 
-        {/* Live Timer Pill */}
-        <div className="flex items-center gap-4">
-          <div className={`inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full text-xs font-mono font-bold border backdrop-blur-md ${remainingTime <= 60
-            ? 'bg-rose-500/15 border-rose-500/30 text-rose-400 animate-pulse'
-            : 'bg-primary-600/15 border-primary-500/30 text-primary-300'
-            }`}>
+        {/* Global Continuous Voice Toggle + Mic Status + Live Timer Pill */}
+        <div className="flex flex-wrap items-center gap-3">
+          {/* Global Microphone Toggle Button */}
+          {isSpeechSupported ? (
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                id="btn-global-voice-toggle"
+                onClick={handleToggleGlobalVoice}
+                className={`inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full text-xs font-bold border transition-all shadow-sm ${
+                  isContinuousActive
+                    ? 'bg-rose-500/20 border-rose-500/50 text-rose-300 hover:bg-rose-500/30'
+                    : 'bg-emerald-500/20 border-emerald-500/50 text-emerald-300 hover:bg-emerald-500/30'
+                }`}
+                title={
+                  isContinuousActive
+                    ? 'Click to stop continuous voice recording'
+                    : 'Click to start continuous voice recording for the entire session'
+                }
+              >
+                {isContinuousActive ? (
+                  <>
+                    <span className="w-2.5 h-2.5 rounded-sm bg-rose-400" />
+                    <span>Stop Voice Recording</span>
+                  </>
+                ) : (
+                  <>
+                    <IconMic className="w-3.5 h-3.5 text-emerald-400" />
+                    <span>Start Voice Recording</span>
+                  </>
+                )}
+              </button>
+
+              {/* Status Badge Indicator */}
+              <div
+                id="mic-status-indicator"
+                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-semibold border backdrop-blur-md transition-colors ${
+                  isContinuousActive
+                    ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300'
+                    : 'bg-rose-500/10 border-rose-500/30 text-rose-300'
+                }`}
+              >
+                <span
+                  className={`w-2 h-2 rounded-full ${
+                    isContinuousActive ? 'bg-emerald-400 animate-ping' : 'bg-rose-400'
+                  }`}
+                />
+                <span>
+                  {isContinuousActive
+                    ? 'Continuous Voice Mode Active'
+                    : 'Voice Recording Stopped'}
+                </span>
+
+                {/* Animated audio sound bars while capturing speech */}
+                {isContinuousActive && isListening && (
+                  <div className="flex items-center gap-0.5 ml-1 h-3">
+                    <span className="w-0.5 bg-emerald-400 rounded-full animate-pulse h-2" />
+                    <span className="w-0.5 bg-emerald-400 rounded-full animate-pulse h-3" />
+                    <span className="w-0.5 bg-emerald-400 rounded-full animate-pulse h-1.5" />
+                    <span className="w-0.5 bg-emerald-400 rounded-full animate-pulse h-3" />
+                    <span className="w-0.5 bg-emerald-400 rounded-full animate-pulse h-2" />
+                  </div>
+                )}
+              </div>
+            </div>
+          ) : (
+            <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-semibold bg-slate-800 border border-slate-700 text-slate-400">
+              <IconMicOff className="w-3.5 h-3.5" />
+              <span>Voice Not Supported</span>
+            </div>
+          )}
+
+          {/* Live Timer Pill */}
+          <div
+            className={`inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full text-xs font-mono font-bold border backdrop-blur-md ${
+              remainingTime <= 60
+                ? 'bg-rose-500/15 border-rose-500/30 text-rose-400 animate-pulse'
+                : 'bg-primary-600/15 border-primary-500/30 text-primary-300'
+            }`}
+          >
             <IconTimer className="w-4 h-4" />
             <span>{formatTime(remainingTime)}</span>
           </div>
@@ -512,14 +658,31 @@ export default function InterviewRoomPage() {
       {/* Mic Permission Banner (proactive) */}
       <MicPermissionBanner
         status={micPermissionStatus}
+        isSecureContext={isSecureContext}
         onRequest={requestPermission}
       />
 
       {/* API Error Display */}
       {apiError && (
-        <div className="p-3.5 bg-rose-500/10 border border-rose-500/30 text-rose-300 rounded-xl text-xs flex items-center gap-2">
-          <span className="w-2 h-2 rounded-full bg-rose-400 flex-shrink-0" />
-          <span>{apiError}</span>
+        <div className="p-4 bg-rose-500/10 border border-rose-500/30 text-rose-300 rounded-xl text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-lg">
+          <div className="flex items-start gap-2.5">
+            <span className="w-2 h-2 rounded-full bg-rose-400 flex-shrink-0 mt-1" />
+            <div className="space-y-0.5">
+              <p className="font-semibold text-rose-200">Submission Alert</p>
+              <p className="text-rose-300/90">{apiError}</p>
+            </div>
+          </div>
+          {answer.trim() && (
+            <button
+              type="button"
+              onClick={submitCurrentAnswer}
+              disabled={submitting}
+              className="px-3.5 py-1.5 rounded-lg bg-rose-500/20 border border-rose-500/40 text-rose-200 hover:bg-rose-500/30 text-xs font-semibold transition-colors flex items-center justify-center gap-1.5 self-end sm:self-center flex-shrink-0"
+            >
+              <IconRefresh className="w-3.5 h-3.5" />
+              <span>Retry Submission</span>
+            </button>
+          )}
         </div>
       )}
 
@@ -639,36 +802,33 @@ export default function InterviewRoomPage() {
 
           {/* Answer Area Form */}
           <form onSubmit={handleSubmitAnswer} className="space-y-5">
-
             {/* Voice Control Panel */}
-            {showVoicePanel && (
-              <div className="space-y-3">
-                <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
-                  Voice Answer
-                </p>
-                <VoiceControlPanel
-                  voiceState={voiceState}
-                  error={speechError}
-                  lowQualityWarning={lowQualityWarning}
-                  interimText={interimText}
-                  recordingSeconds={recordingSeconds}
-                  isSupported={isSpeechSupported}
-                  micPermissionStatus={micPermissionStatus}
-                  onStart={handleStartVoice}
-                  onStop={handleStopVoice}
-                  onRetry={handleRetry}
-                  onTypeInstead={handleTypeInstead}
-                  showTypeInstead={showTypeInstead}
-                />
-              </div>
-            )}
+            <div className="space-y-3">
+              <VoiceControlPanel
+                isContinuousActive={isContinuousActive}
+                isListening={isListening}
+                isProcessing={isProcessing}
+                recordingSeconds={recordingSeconds}
+                interimText={interimText}
+                error={speechError}
+                lowQualityWarning={lowQualityWarning}
+                isSupported={isSpeechSupported}
+                isSecureContext={isSecureContext}
+                onRequestPermission={requestPermission}
+                onStart={handleStartVoice}
+                onStop={handleStopVoice}
+              />
+            </div>
 
             {/* Transcript / Text Answer Area */}
             <div className="space-y-2">
               <div className="flex justify-between items-center text-xs text-slate-400">
-                <label htmlFor="answer-input" className="font-semibold text-slate-300 uppercase tracking-wider text-[11px]">
-                  {voiceState === VOICE_STATES.TRANSCRIPT_READY && !showTypeInstead
-                    ? 'Transcript — Review & Edit Before Submitting'
+                <label
+                  htmlFor="answer-input"
+                  className="font-semibold text-slate-300 uppercase tracking-wider text-[11px]"
+                >
+                  {isContinuousActive
+                    ? 'Live Voice Transcript & Answer (Editable)'
                     : 'Your Answer'}
                 </label>
                 <span className="font-mono">{answer.length} characters</span>
@@ -681,65 +841,44 @@ export default function InterviewRoomPage() {
                   disabled={submitting}
                   rows={6}
                   value={answer}
-                  onChange={(e) => setAnswer(e.target.value)}
+                  onChange={(e) => {
+                    setAnswer(e.target.value);
+                    syncEditedAnswer(e.target.value);
+                  }}
                   placeholder={
-                    isListening
-                      ? 'Listening... speak your answer clearly'
-                      : voiceState === VOICE_STATES.TRANSCRIPT_READY
-                        ? 'Review and edit your transcript here before submitting...'
-                        : showVoicePanel
-                          ? 'Click Start Recording above, or type your response here...'
-                          : 'Type your response here...'
+                    isContinuousActive
+                      ? 'Listening continuously... speak your answer clearly, or type/edit here directly.'
+                      : 'Type your answer here, or click "Start Voice Recording" to answer by voice...'
                   }
-                  className={`w-full p-4 rounded-xl glass-input text-sm leading-relaxed placeholder-slate-500 resize-y transition-all ${voiceState === VOICE_STATES.TRANSCRIPT_READY
-                    ? 'border-emerald-500/30 ring-1 ring-emerald-500/20'
-                    : isListening
-                      ? 'border-rose-500/30 ring-1 ring-rose-500/20'
+                  className={`w-full p-4 rounded-xl glass-input text-sm leading-relaxed placeholder-slate-500 resize-y transition-all ${
+                    isContinuousActive
+                      ? 'border-emerald-500/40 ring-1 ring-emerald-500/20'
                       : ''
-                    }`}
+                  }`}
                 />
                 {/* Live listening indicator overlay */}
-                {isListening && (
-                  <div className="absolute top-2 right-2 flex items-center gap-1.5 px-2 py-1 rounded-md bg-rose-500/20 border border-rose-500/30">
-                    <span className="w-1.5 h-1.5 rounded-full bg-rose-400 animate-ping" />
-                    <span className="text-[10px] font-bold text-rose-300">LIVE</span>
+                {isContinuousActive && (
+                  <div className="absolute top-2.5 right-2.5 flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-emerald-500/20 border border-emerald-500/30 text-emerald-300 text-[10px] font-bold">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
+                    <span>CONTINUOUS MIC ON</span>
                   </div>
                 )}
               </div>
-
-              {/* Type-instead toggle when voice is visible */}
-              {showVoicePanel && !showTypeInstead && voiceState === VOICE_STATES.IDLE && (
-                <p className="text-[11px] text-slate-500">
-                  Prefer typing?{' '}
-                  <button
-                    type="button"
-                    onClick={handleTypeInstead}
-                    className="text-slate-400 underline underline-offset-2 hover:text-white transition-colors"
-                  >
-                    Switch to text input
-                  </button>
-                </p>
-              )}
-              {showTypeInstead && (
-                <p className="text-[11px] text-slate-500">
-                  <button
-                    type="button"
-                    onClick={() => { setShowTypeInstead(false); resetVoice(); }}
-                    className="text-slate-400 underline underline-offset-2 hover:text-white transition-colors"
-                  >
-                    Switch back to voice
-                  </button>
-                </p>
-              )}
             </div>
 
             {/* Submit Row */}
-            <div className="flex items-center justify-end pt-1">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-1">
+              <span className="text-[11px] text-slate-400">
+                {isContinuousActive
+                  ? 'Continuous voice is ON — your microphone stays active for the next question automatically.'
+                  : 'You can submit your typed response, or turn on voice recording at any time.'}
+              </span>
+
               <Button
                 id="btn-submit-answer"
                 type="submit"
                 loading={submitting}
-                disabled={!answer.trim() || isListening}
+                disabled={!answer.trim() || submitting}
                 icon={IconArrowRight}
                 iconPosition="right"
                 variant="primary"

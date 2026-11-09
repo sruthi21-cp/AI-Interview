@@ -316,3 +316,162 @@ def test_existing_login_flow_regression(db_client):
     me = client.get("/api/v1/auth/me", headers={"Authorization": f"Bearer {token}"})
     assert me.status_code == 200
     assert me.json()["email"] == "newuser@example.com"
+
+
+# ---------------------------------------------------------------------------
+# 11. Login with JSON payload (both "email" and "username" supported)
+# ---------------------------------------------------------------------------
+
+def test_login_with_json_payload(db_client):
+    """Clients sending JSON to /auth/login succeed and receive a valid JWT."""
+    db, client = db_client
+    _create_test_user(db, email="jsonuser@example.com", password="SecretPassword123")
+
+    # Login with JSON using "email"
+    res1 = client.post(
+        "/api/v1/auth/login",
+        json={"email": "jsonuser@example.com", "password": "SecretPassword123"},
+    )
+    assert res1.status_code == 200
+    assert "access_token" in res1.json()
+
+    # Login with JSON using "username"
+    res2 = client.post(
+        "/api/v1/auth/login",
+        json={"username": "jsonuser@example.com", "password": "SecretPassword123"},
+    )
+    assert res2.status_code == 200
+    assert "access_token" in res2.json()
+
+
+# ---------------------------------------------------------------------------
+# 12. Login email case-insensitivity and whitespace trimming
+# ---------------------------------------------------------------------------
+
+def test_login_case_insensitivity_and_whitespace(db_client):
+    """Login succeeds regardless of letter casing or accidental whitespace."""
+    db, client = db_client
+    _create_test_user(db, email="case.tester@example.com", password="MyPassword123")
+
+    res = client.post(
+        "/api/v1/auth/login",
+        json={"email": "  CASE.TESTER@EXAMPLE.COM  ", "password": "MyPassword123"},
+    )
+    assert res.status_code == 200
+    token = res.json()["access_token"]
+    me = client.get("/api/v1/auth/me", headers={"Authorization": f"Bearer {token}"})
+    assert me.status_code == 200
+    assert me.json()["email"] == "case.tester@example.com"
+
+
+# ---------------------------------------------------------------------------
+# 13. Login rejected for wrong password
+# ---------------------------------------------------------------------------
+
+def test_login_rejected_wrong_password(db_client):
+    """Wrong password yields 400 with 'Incorrect email or password'."""
+    db, client = db_client
+    _create_test_user(db, email="wrongpass@example.com", password="RealPassword123")
+
+    res = client.post(
+        "/api/v1/auth/login",
+        json={"email": "wrongpass@example.com", "password": "IncorrectPassword"},
+    )
+    assert res.status_code == 400
+    assert res.json()["detail"] == "Incorrect email or password"
+
+
+# ---------------------------------------------------------------------------
+# 14. Login rejected for unknown email
+# ---------------------------------------------------------------------------
+
+def test_login_rejected_unknown_email(db_client):
+    """Unknown email yields 400 with 'Incorrect email or password'."""
+    db, client = db_client
+
+    res = client.post(
+        "/api/v1/auth/login",
+        json={"email": "nonexistent_ghost@example.com", "password": "AnyPassword123"},
+    )
+    assert res.status_code == 400
+    assert res.json()["detail"] == "Incorrect email or password"
+
+
+# ---------------------------------------------------------------------------
+# 15. Registration validation checks
+# ---------------------------------------------------------------------------
+
+def test_register_validation_checks(db_client):
+    """Invalid email format or password < 6 characters are rejected with 422."""
+    db, client = db_client
+
+    # Invalid email
+    res1 = client.post(
+        "/api/v1/auth/register",
+        json={"email": "notanemail", "password": "ValidPassword123", "full_name": "Test"},
+    )
+    assert res1.status_code == 422
+
+    # Password too short
+    res2 = client.post(
+        "/api/v1/auth/register",
+        json={"email": "shortpw@example.com", "password": "123", "full_name": "Test"},
+    )
+    assert res2.status_code == 422
+
+
+# ---------------------------------------------------------------------------
+# 16. Duplicate registration rejected
+# ---------------------------------------------------------------------------
+
+def test_duplicate_registration_rejected(db_client):
+    """Registering an existing email returns 400 with descriptive error."""
+    db, client = db_client
+
+    # First registration
+    res1 = client.post(
+        "/api/v1/auth/register",
+        json={"email": "dup@example.com", "password": "Password123", "full_name": "First User"},
+    )
+    assert res1.status_code == 201
+
+    # Second registration with same email
+    res2 = client.post(
+        "/api/v1/auth/register",
+        json={"email": "dup@example.com", "password": "Password123", "full_name": "Second User"},
+    )
+    assert res2.status_code == 400
+    assert "already exists" in res2.json()["detail"].lower()
+
+
+# ---------------------------------------------------------------------------
+# 17. Protected routes and token verification
+# ---------------------------------------------------------------------------
+
+def test_protected_routes_and_token_verification(db_client):
+    """Protected /auth/me returns profile with valid token, 401 without or with invalid token."""
+    db, client = db_client
+    _create_test_user(db, email="protected@example.com", password="SecretPassword123")
+
+    # Valid login
+    res = client.post(
+        "/api/v1/auth/login",
+        json={"email": "protected@example.com", "password": "SecretPassword123"},
+    )
+    assert res.status_code == 200
+    token = res.json()["access_token"]
+
+    # Valid token gives 200
+    me_valid = client.get("/api/v1/auth/me", headers={"Authorization": f"Bearer {token}"})
+    assert me_valid.status_code == 200
+    assert me_valid.json()["email"] == "protected@example.com"
+
+    # Missing token gives 401
+    me_no_token = client.get("/api/v1/auth/me")
+    assert me_no_token.status_code == 401
+
+    # Invalid token gives 401
+    me_bad_token = client.get("/api/v1/auth/me", headers={"Authorization": "Bearer bad_token_12345"})
+    assert me_bad_token.status_code == 401
+
+

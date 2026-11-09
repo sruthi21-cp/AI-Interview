@@ -349,59 +349,73 @@ class InterviewEngine:
 
         # If more questions remain, generate next adaptive question using decision engine
         if session.answered_count < session.question_count:
-            resume_profile_dict = json.loads(session.resume_profile or '{}')
-            retriever = LocalKnowledgeRetriever()
-            retrieved_topics = retriever.retrieve(
-                selected_skills=all_skills,
-                difficulty=curr_diff,
-                experience_level=session.experience_level
-            )
-            retrieved_dicts = [r.to_dict() for r in retrieved_topics]
+            try:
+                resume_profile_dict = json.loads(session.resume_profile or '{}')
+                retriever = LocalKnowledgeRetriever()
+                retrieved_topics = retriever.retrieve(
+                    selected_skills=all_skills,
+                    difficulty=curr_diff,
+                    experience_level=session.experience_level
+                )
+                retrieved_dicts = [r.to_dict() for r in retrieved_topics]
 
-            next_decision = self.decision_engine.determine_next_question(
-                interview_state=adaptive_state_dict,
-                latest_evaluation=eval_dict,
-                resume_context=resume_profile_dict,
-                selected_skills=all_skills,
-                available_topics=retrieved_dicts,
-            )
+                next_decision = self.decision_engine.determine_next_question(
+                    interview_state=adaptive_state_dict,
+                    latest_evaluation=eval_dict,
+                    resume_context=resume_profile_dict,
+                    selected_skills=all_skills,
+                    available_topics=retrieved_dicts,
+                )
 
-            next_q = self.provider.generate_adaptive_next_question(
-                setup={
-                    "job_role": session.job_role,
-                    "interview_type": session.interview_type,
-                    "experience_level": session.experience_level,
-                    "difficulty": next_decision.difficulty or curr_diff,
-                    "interview_language": session.interview_language or "English",
-                    "selected_skills": selected_skills,
-                    "resume_skills": resume_skills,
-                },
-                questions_asked=questions_list,
-                evaluations=existing_evals,
-                adaptive_state=adaptive_state_dict,
-                resume_profile=resume_profile_dict,
-                retrieved_knowledge=retrieved_dicts,
-                decision=next_decision,
-            )
+                next_q = self.provider.generate_adaptive_next_question(
+                    setup={
+                        "job_role": session.job_role,
+                        "interview_type": session.interview_type,
+                        "experience_level": session.experience_level,
+                        "difficulty": next_decision.difficulty or curr_diff,
+                        "interview_language": session.interview_language or "English",
+                        "selected_skills": selected_skills,
+                        "resume_skills": resume_skills,
+                    },
+                    questions_asked=questions_list,
+                    evaluations=existing_evals,
+                    adaptive_state=adaptive_state_dict,
+                    resume_profile=resume_profile_dict,
+                    retrieved_knowledge=retrieved_dicts,
+                    decision=next_decision,
+                )
 
-            # Deduplication validation
-            candidate_q = next_q
-            if candidate_q in questions_list or self.decision_engine.is_semantically_duplicate(candidate_q, questions_list):
-                fallbacks = [
-                    f"In {next_decision.next_skill} ({next_decision.next_topic}), how do you optimize for production performance and handle edge cases?",
-                    f"Let's explore another aspect of {next_decision.next_skill} ({next_decision.next_topic}): how do you test and debug issues in production?",
-                    f"When working with {next_decision.next_skill} ({next_decision.next_topic}), what architecture patterns prevent memory leaks and performance bottlenecks?",
-                ]
-                for fb in fallbacks:
-                    if fb not in questions_list and not self.decision_engine.is_semantically_duplicate(fb, questions_list):
-                        candidate_q = fb
-                        break
-            next_q = candidate_q
+                # Deduplication validation
+                candidate_q = next_q
+                if candidate_q in questions_list or self.decision_engine.is_semantically_duplicate(candidate_q, questions_list):
+                    skill_name = getattr(next_decision, 'next_skill', None) or (selected_skills[0] if selected_skills else session.job_role) or "software engineering"
+                    topic_name = getattr(next_decision, 'next_topic', None) or "production best practices"
+                    fallbacks = [
+                        f"In {skill_name} ({topic_name}), how do you optimize for production performance and handle edge cases?",
+                        f"Let's explore another aspect of {skill_name} ({topic_name}): how do you test and debug issues in production?",
+                        f"When working with {skill_name} ({topic_name}), what architecture patterns prevent memory leaks and performance bottlenecks?",
+                    ]
+                    for fb in fallbacks:
+                        if fb not in questions_list and not self.decision_engine.is_semantically_duplicate(fb, questions_list):
+                            candidate_q = fb
+                            break
+                next_q = candidate_q
 
-            questions_list.append(next_q)
-            conv_history.append({"question": next_q})
-            adaptive_state_dict.setdefault("questions_asked", []).append(next_q)
-            session.questions = json.dumps(questions_list)
+                questions_list.append(next_q)
+                conv_history.append({"question": next_q})
+                adaptive_state_dict.setdefault("questions_asked", []).append(next_q)
+                session.questions = json.dumps(questions_list)
+            except Exception as ad_err:
+                logger.warning("Adaptive next-question generation failed; using deterministic fallback question: %s", ad_err)
+                fallback_skill = (all_skills[session.answered_count % len(all_skills)]) if all_skills else (session.job_role or "Software Engineering")
+                fallback_q = f"In {fallback_skill}, how do you approach error handling, debugging, and edge-case validation in production systems?"
+                if fallback_q in questions_list:
+                    fallback_q = f"What are the key trade-offs and performance considerations when implementing architecture solutions with {fallback_skill}?"
+                next_q = fallback_q
+                questions_list.append(next_q)
+                conv_history.append({"question": next_q})
+                adaptive_state_dict.setdefault("questions_asked", []).append(next_q)
+                session.questions = json.dumps(questions_list)
 
         # If all questions answered, mark session completed
         if session.answered_count >= session.question_count:
@@ -410,8 +424,16 @@ class InterviewEngine:
 
         session.adaptive_state = json.dumps(adaptive_state_dict)
 
-        db.add(session)
-        db.commit()
+        try:
+            db.add(session)
+            db.commit()
+        except Exception as db_err:
+            db.rollback()
+            logger.error("Failed to commit answer evaluation to database: %s", db_err, exc_info=True)
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Database commit failed while saving your answer: {str(db_err)}"
+            )
 
         return eval_dict
 

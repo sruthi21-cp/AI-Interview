@@ -49,15 +49,21 @@ export default function ResetPasswordPage() {
       });
       setSuccess(true);
     } catch (err) {
-      const detail = err.response?.data?.detail;
-      if (detail && detail.toLowerCase().includes('invalid or has expired')) {
-        setError('invalid_or_expired');
+      if (err.response?.data?.detail) {
+        const detail = err.response.data.detail;
+        if (typeof detail === 'string' && detail.toLowerCase().includes('invalid or has expired')) {
+          setError('invalid_or_expired');
+        } else if (typeof detail === 'string') {
+          setError(detail);
+        } else if (Array.isArray(detail)) {
+          setError(detail.map((d) => d.msg || JSON.stringify(d)).join(', '));
+        } else {
+          setError('Something went wrong. Please request a new reset link.');
+        }
+      } else if (!err.response) {
+        setError('Cannot connect to the backend server. Please verify the backend service is running on port 8000.');
       } else {
-        setError(
-          typeof detail === 'string'
-            ? detail
-            : 'Something went wrong. Please request a new reset link.'
-        );
+        setError('Something went wrong. Please request a new reset link.');
       }
     } finally {
       setLoading(false);

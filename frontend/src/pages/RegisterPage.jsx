@@ -32,20 +32,28 @@ export default function RegisterPage() {
     try {
       // Backend expects { full_name, email, password }
       await api.post('/auth/register', {
-        full_name: fullName.trim(),
+        full_name: fullName.trim() || undefined,
         email: email.trim(),
         password: password,
       });
 
-      // Redirect to login upon successful registration
-      navigate('/login');
+      // Redirect to login upon successful registration with prefill state
+      navigate('/login', { state: { registered: true, email: email.trim() } });
     } catch (err) {
-      const detail = err.response?.data?.detail;
-      setError(
-        typeof detail === 'string'
-          ? detail
-          : 'Registration failed. Please verify your details or use a different email.'
-      );
+      if (err.response?.data?.detail) {
+        const detail = err.response.data.detail;
+        if (typeof detail === 'string') {
+          setError(detail);
+        } else if (Array.isArray(detail)) {
+          setError(detail.map((d) => d.msg || JSON.stringify(d)).join(', '));
+        } else {
+          setError('Registration failed. Please verify your details or use a different email.');
+        }
+      } else if (!err.response) {
+        setError('Cannot connect to the backend server. Please verify the backend service is running on port 8000.');
+      } else {
+        setError('Registration failed. Please verify your details or use a different email.');
+      }
     } finally {
       setLoading(false);
     }

@@ -13,14 +13,29 @@ export default function ForgotPasswordPage() {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
+    const cleanEmail = email.trim();
+    if (!cleanEmail) {
+      setError('Please enter a valid email address.');
+      return;
+    }
     setLoading(true);
     try {
-      await api.post('/auth/forgot-password', { email: email.trim() });
+      await api.post('/auth/forgot-password', { email: cleanEmail });
       // Always show success regardless of whether email exists (anti-enumeration)
       setSubmitted(true);
     } catch (err) {
-      // Only show a generic error for network/server failures
-      setError('Something went wrong. Please try again later.');
+      if (err.response?.data?.detail) {
+        const detail = err.response.data.detail;
+        setError(
+          typeof detail === 'string'
+            ? detail
+            : (Array.isArray(detail) ? detail.map((d) => d.msg || JSON.stringify(d)).join(', ') : 'Unable to process request.')
+        );
+      } else if (!err.response) {
+        setError('Cannot connect to the backend server. Please verify the backend service is running on port 8000.');
+      } else {
+        setError('Something went wrong. Please try again later.');
+      }
     } finally {
       setLoading(false);
     }

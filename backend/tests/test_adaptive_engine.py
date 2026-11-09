@@ -43,6 +43,13 @@ def setup_database():
     run_auto_migrations(engine)
 
 
+@pytest.fixture(autouse=True)
+def mock_ai_for_engine_tests(monkeypatch):
+    """Ensure engine unit tests run deterministically without hitting cloud API quotas."""
+    monkeypatch.setattr("app.services.ai.settings.AI_PROVIDER", "mock")
+    monkeypatch.setattr("app.core.config.settings.AI_PROVIDER", "mock")
+
+
 @pytest.fixture
 def db_session():
     db = SessionLocal()

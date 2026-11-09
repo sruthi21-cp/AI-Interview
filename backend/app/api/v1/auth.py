@@ -3,7 +3,7 @@ import time
 from datetime import timedelta
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks, Request
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 
@@ -63,15 +63,47 @@ def register_user(user_in: UserCreate, db: Session = Depends(deps.get_db)) -> An
 
 
 @router.post("/login", response_model=Token)
-def login_access_token(
+async def login_access_token(
+    request: Request,
     db: Session = Depends(deps.get_db),
-    form_data: OAuth2PasswordRequestForm = Depends()
 ) -> Any:
     """
     OAuth2 compatible token login, get an access token for future requests.
+    Supports both application/x-www-form-urlencoded and application/json payloads.
     """
+    content_type = request.headers.get("content-type", "").lower()
+    username = None
+    password = None
+
+    if "application/json" in content_type:
+        try:
+            body = await request.json()
+            username = body.get("username") or body.get("email")
+            password = body.get("password")
+        except Exception:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid JSON payload",
+            )
+    else:
+        try:
+            form = await request.form()
+            username = form.get("username") or form.get("email")
+            password = form.get("password")
+        except Exception:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid form data",
+            )
+
+    if not username or not password:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Incorrect email or password",
+        )
+
     user = auth_service.authenticate_user(
-        db, email=form_data.username, password=form_data.password
+        db, email=str(username).strip(), password=str(password)
     )
     if not user:
         raise HTTPException(
@@ -132,6 +164,7 @@ _GENERIC_RESET_MESSAGE = (
 @router.post("/forgot-password", status_code=status.HTTP_200_OK)
 def forgot_password(
     body: ForgotPasswordRequest,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(deps.get_db),
 ) -> dict:
     """
@@ -142,6 +175,7 @@ def forgot_password(
       (prevents account/email enumeration).
     - Rate-limited to one request per email per 60 seconds.
     - Raw token is NEVER stored — only its SHA-256 hash.
+    - Uses BackgroundTasks so the HTTP response returns immediately without hanging on SMTP.
     """
     email = body.email.strip().lower()
 
@@ -160,8 +194,9 @@ def forgot_password(
         reset_url = (
             f"{settings.FRONTEND_URL}/reset-password?token={raw_token}"
         )
-        # Fire-and-forget: SMTP errors are caught inside send_password_reset_email
-        send_password_reset_email(
+        # Send in background so the user receives instant response even if SMTP is slow
+        background_tasks.add_task(
+            send_password_reset_email,
             to_email=user.email,
             reset_url=reset_url,
             expires_minutes=settings.PASSWORD_RESET_TOKEN_EXPIRE_MINUTES,

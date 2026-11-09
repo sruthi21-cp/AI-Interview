@@ -18,6 +18,28 @@ export default function MainLayout() {
   const navigate = useNavigate();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [user, setUser] = useState(null);
+  const [aiStatus, setAiStatus] = useState({ label: 'AI Provider Active', isReal: true });
+
+  // Query backend health to reflect dynamic AI provider and model status
+  useEffect(() => {
+    api.get('/health')
+      .then((res) => {
+        const ai = res.data?.ai;
+        if (ai) {
+          let modelName = ai.model;
+          if (modelName === 'gemini-2.5-flash') modelName = 'Gemini 2.5 Flash';
+          else if (modelName === 'gemini-3.5-flash') modelName = 'Gemini 3.5 Flash';
+          else if (modelName === 'gpt-4o-mini') modelName = 'GPT-4o Mini';
+          setAiStatus({
+            label: `${modelName || 'AI Provider'} Active`,
+            isReal: Boolean(ai.is_real_llm),
+          });
+        }
+      })
+      .catch(() => {
+        // Keep default label if unreachable
+      });
+  }, []);
 
   // Fetch current user info for sidebar profile pill if token exists
   useEffect(() => {
@@ -263,9 +285,12 @@ export default function MainLayout() {
           </div>
 
           <div className="flex items-center gap-4">
-            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 shadow-[0_0_12px_rgba(34,197,94,0.15)]">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-              AI Provider Active
+            <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold ${aiStatus.isReal
+              ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 shadow-[0_0_12px_rgba(34,197,94,0.15)]'
+              : 'bg-amber-500/10 text-amber-300 border border-amber-500/20'
+            }`}>
+              <span className={`w-1.5 h-1.5 rounded-full ${aiStatus.isReal ? 'bg-emerald-400 animate-pulse' : 'bg-amber-400'}`} />
+              {aiStatus.label}
             </span>
             <Link
               to="/interview/setup"

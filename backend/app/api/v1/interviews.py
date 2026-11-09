@@ -14,6 +14,9 @@ from app.api import deps
 
 from app.models.user import User as UserModel
 from app.utils.pdf_extractor import extract_text_from_pdf
+import logging
+
+logger = logging.getLogger(__name__)
 router = APIRouter()
 
 engine = InterviewEngine()
@@ -212,12 +215,47 @@ def submit_answer(
     current_user: UserModel = Depends(deps.get_current_user),
 ) -> Any:
     """Submit an answer and receive evaluation."""
-    sess = db.query(InterviewSession).filter(InterviewSession.id == session_id, InterviewSession.user_id == current_user.id).first()
+    sess = db.query(InterviewSession).filter(
+        InterviewSession.id == session_id,
+        InterviewSession.user_id == current_user.id
+    ).first()
     if not sess:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Interview session not found")
-    answer_text = payload.get("answer", "")
-    evaluation = engine.submit_answer(db, sess.id, answer_text)
-    return {"session_id": sess.id, "evaluation": evaluation}
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Interview session not found or you do not have permission to access it."
+        )
+
+    if not isinstance(payload, dict):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Invalid payload. A JSON object with an 'answer' field is required."
+        )
+
+    answer_text = str(payload.get("answer", "") or "").strip()
+    if not answer_text:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Answer cannot be empty. Please provide a response before submitting."
+        )
+
+    try:
+        evaluation = engine.submit_answer(db, sess.id, answer_text)
+        return {"session_id": sess.id, "evaluation": evaluation}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(
+            "Error submitting answer for session %d (user %d): %s",
+            session_id, current_user.id, e, exc_info=True
+        )
+        try:
+            db.rollback()
+        except Exception:
+            pass
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"An error occurred while evaluating your answer: {str(e)}"
+        )
 
 @router.get("/", response_model=InterviewSessionListResponse)
 def list_interviews(

@@ -1,3 +1,4 @@
+import os
 import time
 import logging
 from sqlalchemy import create_engine, text
@@ -6,13 +7,38 @@ from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
-# For SQLite, we need to allow multiple threads to communicate with it
-if settings.DATABASE_URL.startswith("sqlite"):
+db_url = settings.DATABASE_URL
+
+# For SQLite with relative paths (e.g. sqlite:///./sql_app.db), anchor to the canonical project database
+# to ensure both root and backend working directories access the exact same database.
+if db_url.startswith("sqlite"):
+    if (
+        (db_url.startswith("sqlite:///./") or (db_url.startswith("sqlite:///") and not db_url.startswith("sqlite:////")))
+        and ":memory:" not in db_url
+    ):
+        db_filename = db_url.replace("sqlite:///./", "").replace("sqlite:///", "")
+        if not os.path.isabs(db_filename):
+            _backend_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+            _root_dir = os.path.dirname(_backend_dir)
+            root_candidate = os.path.join(_root_dir, db_filename)
+            backend_candidate = os.path.join(_backend_dir, db_filename)
+
+            if os.path.exists(root_candidate):
+                canonical_path = root_candidate
+            elif os.path.exists(backend_candidate):
+                canonical_path = backend_candidate
+            else:
+                canonical_path = root_candidate
+
+            canonical_path = canonical_path.replace("\\", "/")
+            db_url = f"sqlite:///{canonical_path}"
+
     engine = create_engine(
-        settings.DATABASE_URL, connect_args={"check_same_thread": False}
+        db_url, connect_args={"check_same_thread": False, "timeout": 30}
     )
 else:
-    engine = create_engine(settings.DATABASE_URL, pool_pre_ping=True)
+    engine = create_engine(db_url, pool_pre_ping=True)
+
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
