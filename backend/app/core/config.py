@@ -8,6 +8,35 @@ _root_dir = os.path.dirname(_backend_dir)
 _backend_env = os.path.join(_backend_dir, ".env")
 _root_env = os.path.join(_root_dir, ".env")
 
+def normalize_database_url(url: str) -> str:
+    """
+    Normalizes a database connection URL for SQLAlchemy.
+
+    Render and other PaaS providers often provide PostgreSQL connection strings
+    with the 'postgres://' or 'postgresql://' scheme. In SQLAlchemy 2.0+,
+    'postgresql://' without an explicit driver attempts to load the 'psycopg'
+    (v3) driver. Since this project uses 'psycopg2-binary', we explicitly normalize
+    PostgreSQL URLs to use the 'postgresql+psycopg2://' scheme.
+
+    Preserves credentials, special characters, ports, and query parameters safely.
+    Preserves SQLite URLs (e.g. 'sqlite:///./sql_app.db', 'sqlite:///:memory:').
+    """
+    if not isinstance(url, str):
+        return url
+
+    trimmed = url.strip()
+    if not trimmed:
+        return trimmed
+
+    if trimmed.startswith("postgres://"):
+        return f"postgresql+psycopg2://{trimmed[len('postgres://'):]}"
+    if trimmed.startswith("postgresql://"):
+        return f"postgresql+psycopg2://{trimmed[len('postgresql://'):]}"
+    if trimmed.startswith("postgresql+psycopg://"):
+        return f"postgresql+psycopg2://{trimmed[len('postgresql+psycopg://'):]}"
+    return trimmed
+
+
 class Settings(BaseSettings):
     PROJECT_NAME: str = "AI Interview Simulator"
     API_V1_STR: str = "/api/v1"
@@ -69,9 +98,7 @@ class Settings(BaseSettings):
     @field_validator("DATABASE_URL", mode="before")
     @classmethod
     def assemble_db_connection(cls, v: str) -> str:
-        if isinstance(v, str) and v.startswith("postgres://"):
-            return v.replace("postgres://", "postgresql://", 1)
-        return v
+        return normalize_database_url(v)
 
     def model_post_init(self, __context):
         if self.JWT_SECRET and self.SECRET_KEY == "local_development_only_secret_key_1234567890":

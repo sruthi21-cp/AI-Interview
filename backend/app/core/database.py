@@ -3,11 +3,11 @@ import time
 import logging
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import declarative_base, sessionmaker
-from app.core.config import settings
+from app.core.config import settings, normalize_database_url
 
 logger = logging.getLogger(__name__)
 
-db_url = settings.DATABASE_URL
+db_url = normalize_database_url(settings.DATABASE_URL)
 
 # For SQLite with relative paths (e.g. sqlite:///./sql_app.db), anchor to the canonical project database
 # to ensure both root and backend working directories access the exact same database.

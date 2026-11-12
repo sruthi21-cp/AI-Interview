@@ -50,7 +50,7 @@ export default function RegisterPage() {
           setError('Registration failed. Please verify your details or use a different email.');
         }
       } else if (!err.response) {
-        setError('Cannot connect to the backend server. Please verify the backend service is running on port 8000.');
+        setError('Cannot connect to the backend server. Please verify the backend service is running and accessible.');
       } else {
         setError('Registration failed. Please verify your details or use a different email.');
       }

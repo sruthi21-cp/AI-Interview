@@ -53,7 +53,7 @@ export default function LoginPage() {
           setError('Authentication failed. Please check your credentials.');
         }
       } else if (!err.response) {
-        setError('Cannot connect to the backend server. Please verify the backend service is running on port 8000.');
+        setError('Cannot connect to the backend server. Please verify the backend service is running and accessible.');
       } else {
         setError('Authentication failed. Please check your credentials.');
       }

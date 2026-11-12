@@ -1,17 +1,33 @@
 import axios from 'axios';
 
+// Helper to ensure API base URL always ends with /api/v1
+const normalizeApiBase = (url) => {
+  if (!url || typeof url !== 'string') return '';
+  let clean = url.trim().replace(/\/+$/, '');
+  if (!clean) return '';
+  if (!clean.endsWith('/api/v1')) {
+    if (clean.endsWith('/api')) {
+      clean = `${clean}/v1`;
+    } else {
+      clean = `${clean}/api/v1`;
+    }
+  }
+  return clean;
+};
+
 // Dynamically resolve the backend host so the frontend works seamlessly
-// through Vite proxy (/api/v1), Nginx in production, or direct backend access.
+// in production on Render, Docker, or through Vite local dev proxy (/api/v1).
 const resolveBackendBase = () => {
-  if (import.meta.env.VITE_API_BASE_URL) {
-    return import.meta.env.VITE_API_BASE_URL;
+  const envUrl =
+    import.meta.env.VITE_API_BASE_URL ||
+    import.meta.env.VITE_API_URL ||
+    import.meta.env.VITE_BACKEND_URL;
+
+  if (envUrl) {
+    return normalizeApiBase(envUrl);
   }
-  if (import.meta.env.VITE_API_URL) {
-    return import.meta.env.VITE_API_URL;
-  }
-  // When running in a browser, use relative /api/v1 so requests are forwarded via
-  // the Vite dev server proxy (or Nginx reverse proxy). This completely avoids
-  // cross-origin (CORS) preflight failures, network firewall blocking, and IP mismatches.
+  // When running in a browser without explicit env URL, use relative /api/v1
+  // so requests are forwarded via the Vite dev server proxy (or Nginx reverse proxy).
   if (typeof window !== 'undefined') {
     return '/api/v1';
   }

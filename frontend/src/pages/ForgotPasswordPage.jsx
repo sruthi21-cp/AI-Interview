@@ -32,7 +32,7 @@ export default function ForgotPasswordPage() {
             : (Array.isArray(detail) ? detail.map((d) => d.msg || JSON.stringify(d)).join(', ') : 'Unable to process request.')
         );
       } else if (!err.response) {
-        setError('Cannot connect to the backend server. Please verify the backend service is running on port 8000.');
+        setError('Cannot connect to the backend server. Please verify the backend service is running and accessible.');
       } else {
         setError('Something went wrong. Please try again later.');
       }
