@@ -98,6 +98,11 @@ export default function InterviewEvaluationPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [downloading, setDownloading] = useState(false);
+  const [expandedQuestions, setExpandedQuestions] = useState({});
+
+  const toggleQuestion = (idx) => {
+    setExpandedQuestions((prev) => ({ ...prev, [idx]: !prev[idx] }));
+  };
 
   const contentRef = useRef();
 
@@ -318,37 +323,175 @@ export default function InterviewEvaluationPage() {
         {/* Per-Question Breakdown List */}
         {d.per_question_evaluations?.length > 0 && (
           <GlassCard className="space-y-4 p-6">
-            <h3 className="text-sm font-bold text-white uppercase tracking-wider">
-              Per-Question Performance Log
-            </h3>
+            <div className="flex items-center justify-between border-b border-white/[0.06] pb-3">
+              <div>
+                <h3 className="text-sm font-bold text-white uppercase tracking-wider">
+                  Per-Question Performance & Technical Evaluation Log
+                </h3>
+                <p className="text-xs text-slate-400">
+                  Inspect structured rubrics, knowledge gaps, correct points, and expected model answers
+                </p>
+              </div>
+              <span className="text-xs text-slate-400 font-mono">
+                {d.per_question_evaluations.length} Questions Evaluated
+              </span>
+            </div>
+
             <div className="space-y-3">
               {d.per_question_evaluations.map((q, idx) => {
+                const isExpanded = !!expandedQuestions[idx];
                 const qScoreColor =
                   q.score >= 7
-                    ? 'text-accent-emerald'
+                    ? 'text-accent-emerald bg-emerald-500/10 border-emerald-500/20'
                     : q.score >= 4
-                    ? 'text-amber-400'
-                    : 'text-rose-400';
+                    ? 'text-amber-400 bg-amber-500/10 border-amber-500/20'
+                    : 'text-rose-400 bg-rose-500/10 border-rose-500/20';
 
                 return (
                   <div
                     key={idx}
-                    className="p-4 rounded-xl glass-panel flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-white/[0.06]"
+                    className="rounded-xl border border-white/[0.06] bg-white/[0.02] overflow-hidden transition-all"
                   >
-                    <div className="space-y-1 min-w-0 flex-1">
-                      <div className="flex items-center gap-2">
-                        <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-primary-600/20 text-primary-300">
-                          Q#{idx + 1}
+                    <div
+                      onClick={() => toggleQuestion(idx)}
+                      className="p-4 cursor-pointer hover:bg-white/[0.03] flex flex-col sm:flex-row sm:items-center justify-between gap-3 transition-colors"
+                    >
+                      <div className="space-y-1 min-w-0 flex-1">
+                        <div className="flex items-center gap-2">
+                          <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-primary-600/20 text-primary-300">
+                            Q#{idx + 1}
+                          </span>
+                          {q.question && (
+                            <span className="text-xs font-semibold text-white line-clamp-1">
+                              {q.question}
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-xs text-slate-300 font-normal line-clamp-2">
+                          {q.answer_summary || q.feedback}
+                        </p>
+                      </div>
+
+                      <div className="flex items-center gap-3 self-end sm:self-auto flex-shrink-0">
+                        <span className={`px-2.5 py-1 text-xs font-extrabold rounded-full border ${qScoreColor}`}>
+                          {q.score} / 10
+                        </span>
+                        <span className="text-xs text-slate-400">
+                          {isExpanded ? '▲ Hide Details' : '▼ View Breakdown'}
                         </span>
                       </div>
-                      <p className="text-xs text-slate-300 font-medium">{q.feedback}</p>
                     </div>
 
-                    <div className="text-right flex-shrink-0">
-                      <span className={`text-base font-extrabold ${qScoreColor}`}>
-                        {q.score} / 10
-                      </span>
-                    </div>
+                    {isExpanded && (
+                      <div className="p-5 border-t border-white/[0.06] space-y-4 text-xs bg-slate-950/40">
+                        {q.question && (
+                          <div>
+                            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                              Question:
+                            </span>
+                            <p className="text-slate-200 mt-1 font-medium text-xs">{q.question}</p>
+                          </div>
+                        )}
+
+                        {q.answer && (
+                          <div>
+                            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                              Your Submitted Answer:
+                            </span>
+                            <div className="p-3 rounded-xl bg-white/[0.02] border border-white/5 text-slate-300 mt-1 whitespace-pre-wrap leading-relaxed">
+                              {q.answer}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Dimension badges if available */}
+                        {(q.correctness !== undefined || q.technical_depth !== undefined || q.conceptual_understanding !== undefined) && (
+                          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1">
+                            {q.correctness !== undefined && (
+                              <div className="p-2 rounded-lg bg-white/[0.02] border border-white/5 text-center">
+                                <span className="text-[10px] text-slate-400 block">Correctness</span>
+                                <span className="text-xs font-bold text-accent-emerald">{q.correctness}/10</span>
+                              </div>
+                            )}
+                            {q.technical_depth !== undefined && (
+                              <div className="p-2 rounded-lg bg-white/[0.02] border border-white/5 text-center">
+                                <span className="text-[10px] text-slate-400 block">Technical Depth</span>
+                                <span className="text-xs font-bold text-primary-400">{q.technical_depth}/10</span>
+                              </div>
+                            )}
+                            {q.conceptual_understanding !== undefined && (
+                              <div className="p-2 rounded-lg bg-white/[0.02] border border-white/5 text-center">
+                                <span className="text-[10px] text-slate-400 block">Conceptual</span>
+                                <span className="text-xs font-bold text-accent-cyan">{q.conceptual_understanding}/10</span>
+                              </div>
+                            )}
+                            {q.explanation_clarity !== undefined && (
+                              <div className="p-2 rounded-lg bg-white/[0.02] border border-white/5 text-center">
+                                <span className="text-[10px] text-slate-400 block">Clarity</span>
+                                <span className="text-xs font-bold text-indigo-300">{q.explanation_clarity}/10</span>
+                              </div>
+                            )}
+                          </div>
+                        )}
+
+                        {q.scoring_rationale && (
+                          <div>
+                            <span className="text-[10px] font-bold uppercase tracking-wider text-accent-cyan">
+                              Scoring Rationale & Evidence:
+                            </span>
+                            <p className="text-slate-300 mt-1 leading-relaxed">{q.scoring_rationale}</p>
+                          </div>
+                        )}
+
+                        {q.correct_points && q.correct_points.length > 0 && (
+                          <div className="space-y-1">
+                            <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-400">
+                              ✓ Verified Correct Points:
+                            </span>
+                            <ul className="space-y-1 text-slate-300 list-disc list-inside">
+                              {q.correct_points.map((cp, cIdx) => (
+                                <li key={cIdx}>{cp}</li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
+
+                        {q.incorrect_statements && q.incorrect_statements.length > 0 && (
+                          <div className="space-y-1">
+                            <span className="text-[10px] font-bold uppercase tracking-wider text-rose-400">
+                              ✗ Inaccurate Technical Statements:
+                            </span>
+                            <ul className="space-y-1 text-rose-200 list-disc list-inside">
+                              {q.incorrect_statements.map((ic, iIdx) => (
+                                <li key={iIdx}>{ic}</li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
+
+                        {(q.missing_concepts?.length > 0 || q.knowledge_gaps?.length > 0) && (
+                          <div className="space-y-1">
+                            <span className="text-[10px] font-bold uppercase tracking-wider text-amber-400">
+                              ⚠ Missing Key Concepts / Gaps:
+                            </span>
+                            <ul className="space-y-1 text-amber-200 list-disc list-inside">
+                              {(q.missing_concepts || []).concat(q.knowledge_gaps || []).map((gap, gIdx) => (
+                                <li key={gIdx}>{gap}</li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
+
+                        {q.expected_answer && (
+                          <div className="p-3.5 rounded-xl bg-primary-950/30 border border-primary-500/20 space-y-1">
+                            <span className="text-[10px] font-bold uppercase tracking-wider text-primary-300">
+                              Expected Model Technical Answer:
+                            </span>
+                            <p className="text-slate-300 leading-relaxed whitespace-pre-line">{q.expected_answer}</p>
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
                 );
               })}

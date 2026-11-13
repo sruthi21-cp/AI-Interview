@@ -302,6 +302,17 @@ class InterviewEngine:
             "relevance": evaluation_dto.relevance,
             "technical_depth": evaluation_dto.technical_depth,
             "communication_quality": evaluation_dto.communication_quality,
+            "conceptual_understanding": evaluation_dto.conceptual_understanding,
+            "explanation_clarity": evaluation_dto.explanation_clarity,
+            "problem_solving": evaluation_dto.problem_solving,
+            "practical_examples": evaluation_dto.practical_examples,
+            "answer_summary": evaluation_dto.answer_summary,
+            "correct_points": evaluation_dto.correct_points,
+            "incorrect_statements": evaluation_dto.incorrect_statements,
+            "missing_concepts": evaluation_dto.missing_concepts,
+            "knowledge_gaps": evaluation_dto.knowledge_gaps,
+            "expected_answer": evaluation_dto.expected_answer,
+            "scoring_rationale": evaluation_dto.scoring_rationale,
             "strengths": evaluation_dto.strengths,
             "weaknesses": evaluation_dto.weaknesses,
         }
@@ -455,20 +466,34 @@ class InterviewEngine:
         avg_relevance = round(sum(e.get("relevance", 0) for e in evals) / count, 3)
         avg_technical_depth = round(sum(e.get("technical_depth", 0) for e in evals) / count, 3)
         avg_communication = round(sum(e.get("communication_quality", 0) for e in evals) / count, 3)
+        avg_conceptual = round(sum(e.get("conceptual_understanding", e.get("correctness", 0)) for e in evals) / count, 3)
+        avg_clarity = round(sum(e.get("explanation_clarity", e.get("communication_quality", 0)) for e in evals) / count, 3)
 
-        # Collect all unique strengths and weaknesses
+        # Collect all unique strengths, weaknesses, and deep feedback items
         all_strengths = []
         all_weaknesses = []
+        all_correct_points = []
+        all_incorrect_statements = []
+        all_missing_concepts = []
+        all_knowledge_gaps = []
         all_feedback = []
+
         for e in evals:
             all_strengths.extend(e.get("strengths", []))
             all_weaknesses.extend(e.get("weaknesses", []))
+            all_correct_points.extend(e.get("correct_points", []))
+            all_incorrect_statements.extend(e.get("incorrect_statements", []))
+            all_missing_concepts.extend(e.get("missing_concepts", []))
+            all_knowledge_gaps.extend(e.get("knowledge_gaps", []))
             if e.get("feedback"):
                 all_feedback.append(e["feedback"])
 
-        # Deduplicate strengths/weaknesses
         unique_strengths = list(dict.fromkeys(all_strengths))
         unique_weaknesses = list(dict.fromkeys(all_weaknesses))
+        unique_correct = list(dict.fromkeys(all_correct_points))
+        unique_incorrect = list(dict.fromkeys(all_incorrect_statements))
+        unique_missing = list(dict.fromkeys(all_missing_concepts))
+        unique_gaps = list(dict.fromkeys(all_knowledge_gaps))
 
         adaptive_state = json.loads(session.adaptive_state or '{}')
         strong_topics = adaptive_state.get("strong_topics", [])
@@ -487,8 +512,14 @@ class InterviewEngine:
             "overall_relevance": avg_relevance,
             "overall_technical_depth": avg_technical_depth,
             "overall_communication_quality": avg_communication,
+            "overall_conceptual_understanding": avg_conceptual,
+            "overall_explanation_clarity": avg_clarity,
             "strengths": unique_strengths,
             "weaknesses": unique_weaknesses,
+            "correct_points": unique_correct,
+            "incorrect_statements": unique_incorrect,
+            "missing_concepts": unique_missing,
+            "knowledge_gaps": unique_gaps,
             "strong_topics": strong_topics,
             "weak_topics": weak_topics,
             "feedback": " | ".join(all_feedback) if all_feedback else "No feedback available.",
@@ -497,16 +528,15 @@ class InterviewEngine:
 
     def get_user_analytics(self, db: Session, user_id: int) -> Dict[str, Any]:
         """Compute analytics across all interview sessions for a specific user.
-        Returns a dict with overall statistics, performance breakdown, trends,
-        strengths, weaknesses, and recent interview summaries.
+        Returns a dict with overall statistics, verified strengths, verified weaknesses,
+        prioritized concepts to improve, per-question evaluations, and recent sessions.
         """
-        # Fetch all sessions for the user
+        # Fetch all sessions strictly for this user (user isolation)
         sessions = db.query(InterviewSession).filter(InterviewSession.user_id == user_id).order_by(InterviewSession.created_at.desc()).all()
         total = len(sessions)
         completed_sessions = [s for s in sessions if s.status == "completed"]
         in_progress = len([s for s in sessions if s.status == "in_progress"])
 
-        # Prepare aggregates for completed sessions
         scores = []
         correctness = []
         relevance = []
@@ -516,6 +546,10 @@ class InterviewEngine:
         weaknesses = []
         trend = []
         recent = []
+
+        # Topic aggregation for verified strengths, weaknesses, and improvement roadmap
+        topic_aggregates: Dict[str, Dict[str, Any]] = {}
+        all_evaluations_list: List[Dict[str, Any]] = []
 
         for sess in completed_sessions:
             agg = self.get_aggregated_evaluation(db, sess.id)
@@ -538,6 +572,62 @@ class InterviewEngine:
                 "date": sess.created_at.isoformat(),
             })
 
+            evals = agg.get("per_question_evaluations", [])
+            for e in evals:
+                q_text = e.get("question", "")
+                a_text = e.get("answer", "")
+                score_val = float(e.get("score", 0.0))
+
+                # Identify topic from question and answer
+                detected_topic, detected_skill = self.decision_engine.classify_question_topic(
+                    question=q_text,
+                    answer=a_text,
+                    job_role=sess.job_role,
+                )
+
+                if detected_topic not in topic_aggregates:
+                    topic_aggregates[detected_topic] = {
+                        "topic": detected_topic,
+                        "skill": detected_skill or sess.job_role or "Technical",
+                        "scores": [],
+                        "correct_points": [],
+                        "incorrect_statements": [],
+                        "missing_concepts": [],
+                        "knowledge_gaps": [],
+                        "expected_answers": [],
+                        "sample_answers": [],
+                        "questions": [],
+                    }
+
+                topic_aggregates[detected_topic]["scores"].append(score_val)
+                topic_aggregates[detected_topic]["correct_points"].extend(e.get("correct_points", []))
+                topic_aggregates[detected_topic]["incorrect_statements"].extend(e.get("incorrect_statements", []))
+                topic_aggregates[detected_topic]["missing_concepts"].extend(e.get("missing_concepts", []))
+                topic_aggregates[detected_topic]["knowledge_gaps"].extend(e.get("knowledge_gaps", []))
+                if e.get("expected_answer"):
+                    topic_aggregates[detected_topic]["expected_answers"].append(e["expected_answer"])
+                topic_aggregates[detected_topic]["sample_answers"].append(a_text)
+                topic_aggregates[detected_topic]["questions"].append(q_text)
+
+                all_evaluations_list.append({
+                    "session_id": sess.id,
+                    "job_role": sess.job_role,
+                    "difficulty": sess.difficulty,
+                    "question": q_text,
+                    "answer": a_text,
+                    "score": score_val,
+                    "answer_summary": e.get("answer_summary") or e.get("feedback", ""),
+                    "correct_points": e.get("correct_points", []),
+                    "incorrect_statements": e.get("incorrect_statements", []),
+                    "missing_concepts": e.get("missing_concepts", []),
+                    "knowledge_gaps": e.get("knowledge_gaps", []),
+                    "expected_answer": e.get("expected_answer", ""),
+                    "scoring_rationale": e.get("scoring_rationale", ""),
+                    "feedback": e.get("feedback", ""),
+                    "topic": detected_topic,
+                    "skill": detected_skill,
+                })
+
         trend.sort(key=lambda x: x["date"])
         recent = recent[:5]
 
@@ -552,6 +642,123 @@ class InterviewEngine:
         unique_strengths = list(dict.fromkeys(strengths))
         unique_weaknesses = list(dict.fromkeys(weaknesses))
 
+        # Build Verified Strengths (strictly evaluated questions with avg score >= 7.0)
+        verified_strengths = []
+        verified_weaknesses = []
+        concepts_to_improve = []
+
+        for top, d in topic_aggregates.items():
+            top_scores = d["scores"]
+            top_avg = round(sum(top_scores) / len(top_scores), 1)
+            count_eval = len(top_scores)
+
+            # Verified Strength Rule: Must be evaluated with average score >= 7.0
+            if top_avg >= 7.0:
+                cp_list = list(dict.fromkeys(d["correct_points"]))
+                what_done = cp_list[0] if cp_list else f"Demonstrated sound understanding of {top}"
+                # Answer evidence excerpt
+                sample_ans = d["sample_answers"][0] if d["sample_answers"] else ""
+                evidence_text = f"Candidate answered: \"{sample_ans[:140]}...\"" if len(sample_ans) > 140 else f"Candidate answered: \"{sample_ans}\""
+                verified_strengths.append({
+                    "concept": top,
+                    "skill": d["skill"],
+                    "score": top_avg,
+                    "evaluations_count": count_eval,
+                    "what_done_correctly": what_done,
+                    "evidence": evidence_text if sample_ans else "Demonstrated accurate technical definitions and constraints.",
+                })
+
+            # Verified Weakness Rule: Average score < 6.5 or explicit knowledge gaps/contradictions
+            if top_avg < 6.5 or len(d["incorrect_statements"]) > 0 or len(d["knowledge_gaps"]) > 0:
+                inc_list = list(dict.fromkeys(d["incorrect_statements"]))
+                gaps_list = list(dict.fromkeys(d["knowledge_gaps"]))
+                miss_list = list(dict.fromkeys(d["missing_concepts"]))
+
+                misunderstood = inc_list[0] if inc_list else (gaps_list[0] if gaps_list else (miss_list[0] if miss_list else "Incomplete coverage of core concepts"))
+                why_weak = f"Score averaged {top_avg}/10 across {count_eval} question(s) with identified gaps in {top}."
+                if inc_list:
+                    why_weak = f"Factually incorrect statement detected: {inc_list[0]}"
+
+                sample_q = d["questions"][0] if d["questions"] else top
+                sample_a = d["sample_answers"][0] if d["sample_answers"] else ""
+                demonstrated = f"On '{sample_q[:80]}', candidate stated: \"{sample_a[:120]}...\"" if sample_a else f"Demonstrated in question on {sample_q[:80]}."
+                correct_exp = d["expected_answers"][0] if d["expected_answers"] else f"Review official technical specifications for {top} and ensure accurate definitions."
+
+                verified_weaknesses.append({
+                    "topic": top,
+                    "skill": d["skill"],
+                    "score": top_avg,
+                    "evaluations_count": count_eval,
+                    "why_weak": why_weak,
+                    "misunderstood_or_missed": misunderstood,
+                    "demonstrated_answer": demonstrated,
+                    "correct_explanation": correct_exp,
+                    "recommended_practice": f"Practice 2-3 focused mock questions on {top} with attention to edge cases and trade-offs.",
+                })
+
+                # Add to Concepts to Improve roadmap with priority
+                if top_avg <= 4.5 or len(inc_list) > 0:
+                    priority = "High"
+                    reason = f"Fundamental misunderstanding or low score ({top_avg}/10) directly affecting interview readiness."
+                elif top_avg <= 6.5:
+                    priority = "Medium"
+                    reason = f"Moderate score ({top_avg}/10) showing partial understanding but missing depth or key edge cases."
+                else:
+                    priority = "Low"
+                    reason = f"Good baseline ({top_avg}/10), but minor gaps observed in comprehensive explanation."
+
+                concepts_to_improve.append({
+                    "topic": top,
+                    "priority": priority,
+                    "reason": reason,
+                    "learning_objective": f"Master {top} core mechanisms, architectural trade-offs, and best practices.",
+                    "practice_questions": [
+                        f"How does {top} work under the hood and what are its key performance trade-offs?",
+                        f"Explain a production scenario where {top} could fail or cause bottlenecks.",
+                    ],
+                    "expected_outcome": f"Able to deliver clear, accurate, and in-depth responses on {top} in senior-level interviews.",
+                })
+
+        # Sort strengths by score desc; weaknesses by score asc; concepts by priority (High -> Medium -> Low)
+        verified_strengths.sort(key=lambda x: x["score"], reverse=True)
+        verified_weaknesses.sort(key=lambda x: x["score"])
+        priority_order = {"High": 1, "Medium": 2, "Low": 3}
+        concepts_to_improve.sort(key=lambda x: priority_order.get(x["priority"], 4))
+
+        # Performance Comparison between first completed and latest completed session
+        performance_comparison = None
+        if len(scores) >= 2:
+            first_score = scores[-1]
+            last_score = scores[0]
+            delta = round(last_score - first_score, 1)
+            sign = "+" if delta > 0 else ""
+            summary_text = (
+                f"You improved by {sign}{delta} points from your initial session ({first_score}/10) to your latest session ({last_score}/10)."
+                if delta > 0
+                else (
+                    f"Your performance has remained consistent around {last_score}/10."
+                    if delta == 0
+                    else f"Your latest score ({last_score}/10) was lower than your initial session ({first_score}/10). Review the identified growth areas."
+                )
+            )
+            performance_comparison = {
+                "first_session_score": first_score,
+                "latest_session_score": last_score,
+                "score_delta": delta,
+                "improved_topics": [s["concept"] for s in verified_strengths[:3]],
+                "regressed_or_stagnant_topics": [w["topic"] for w in verified_weaknesses[:3]],
+                "summary": summary_text,
+            }
+        elif len(scores) == 1:
+            performance_comparison = {
+                "first_session_score": scores[0],
+                "latest_session_score": scores[0],
+                "score_delta": 0.0,
+                "improved_topics": [],
+                "regressed_or_stagnant_topics": [],
+                "summary": f"Baseline established at {scores[0]}/10. Complete more sessions to track improvement over time.",
+            }
+
         return {
             "total_interviews": total,
             "completed_interviews": len(completed_sessions),
@@ -565,6 +772,11 @@ class InterviewEngine:
             "average_communication_quality": avg_communication,
             "strengths": unique_strengths,
             "weaknesses": unique_weaknesses,
+            "verified_strengths": verified_strengths,
+            "verified_weaknesses": verified_weaknesses,
+            "concepts_to_improve": concepts_to_improve,
+            "performance_comparison": performance_comparison,
+            "recent_evaluations": all_evaluations_list[:8],
             "trend": trend,
             "recent_interviews": recent,
         }

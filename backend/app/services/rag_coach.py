@@ -14,6 +14,10 @@ from app.schemas.coaching import (
     RecommendedInterviewDTO,
     PracticeQuestionResponse,
     CoachChatResponse,
+    VerifiedStrengthDTO,
+    VerifiedWeaknessDTO,
+    ConceptToImproveDTO,
+    PerformanceComparisonDTO,
 )
 from app.services.ai import AIProvider
 from app.services.knowledge.retriever import LocalKnowledgeRetriever
@@ -112,6 +116,11 @@ class RAGCoachService:
                 "completed_interviews": 0,
                 "resume_skills": resume_skills,
                 "resume_profile": resume_profile,
+                "verified_strengths": [],
+                "verified_weaknesses": [],
+                "concepts_to_improve": [],
+                "performance_comparison": None,
+                "recent_mistakes": [],
             }
 
         session_scores: List[float] = []
@@ -193,11 +202,24 @@ class RAGCoachService:
                         "weaknesses": [],
                         "strengths": [],
                         "questions": [],
+                        "sample_answers": [],
+                        "correct_points": [],
+                        "incorrect_statements": [],
+                        "missing_concepts": [],
+                        "knowledge_gaps": [],
+                        "expected_answers": [],
                     }
                 topic_stats[detected_topic]["scores"].append(q_score)
                 topic_stats[detected_topic]["weaknesses"].extend(e.get("weaknesses", []))
                 topic_stats[detected_topic]["strengths"].extend(e.get("strengths", []))
                 topic_stats[detected_topic]["questions"].append(q_text)
+                topic_stats[detected_topic]["sample_answers"].append(a_text)
+                topic_stats[detected_topic]["correct_points"].extend(e.get("correct_points", []))
+                topic_stats[detected_topic]["incorrect_statements"].extend(e.get("incorrect_statements", []))
+                topic_stats[detected_topic]["missing_concepts"].extend(e.get("missing_concepts", []))
+                topic_stats[detected_topic]["knowledge_gaps"].extend(e.get("knowledge_gaps", []))
+                if e.get("expected_answer"):
+                    topic_stats[detected_topic]["expected_answers"].append(e["expected_answer"])
 
                 # Aggregate skill stats
                 if parent_skill not in skill_stats:
@@ -268,6 +290,130 @@ class RAGCoachService:
         strong_topics_list.sort(key=lambda x: (-x.score, -x.evaluations_count))
         all_topics_list.sort(key=lambda x: x.score)
 
+        # Build Verified Strengths, Verified Weaknesses, Concepts to Improve
+        verified_strengths: List[VerifiedStrengthDTO] = []
+        verified_weaknesses: List[VerifiedWeaknessDTO] = []
+        concepts_to_improve: List[ConceptToImproveDTO] = []
+        recent_mistakes: List[Dict[str, Any]] = []
+
+        for topic_name, data in topic_stats.items():
+            scores = data["scores"]
+            t_avg = round(sum(scores) / len(scores), 1)
+            t_count = len(scores)
+            grounded_knowledge = self._retrieve_grounding_for_topic(data["skill"], topic_name)
+
+            # STRENGTH RULE: Average score >= 7.0 and verified evaluated answers
+            if t_avg >= 7.0:
+                cp_list = list(dict.fromkeys(data.get("correct_points", [])))
+                st_list = list(dict.fromkeys(data.get("strengths", [])))
+                what_done = cp_list[0] if cp_list else (st_list[0] if st_list else f"Demonstrated sound understanding and accuracy in {topic_name}")
+                sample_ans = data["sample_answers"][0] if data.get("sample_answers") else ""
+                evidence_str = f"Candidate answered: \"{sample_ans[:140]}...\"" if len(sample_ans) > 140 else (f"Candidate answered: \"{sample_ans}\"" if sample_ans else "Accurate answers demonstrated during technical evaluation.")
+                verified_strengths.append(
+                    VerifiedStrengthDTO(
+                        concept=topic_name,
+                        skill=data["skill"],
+                        score=t_avg,
+                        evaluations_count=t_count,
+                        what_done_correctly=what_done,
+                        evidence=evidence_str,
+                    )
+                )
+
+            # WEAKNESS RULE: Average score < 6.5 or explicit incorrect statements or knowledge gaps
+            inc_list = list(dict.fromkeys(data.get("incorrect_statements", [])))
+            gaps_list = list(dict.fromkeys(data.get("knowledge_gaps", [])))
+            miss_list = list(dict.fromkeys(data.get("missing_concepts", [])))
+            weak_tags = list(dict.fromkeys(data.get("weaknesses", [])))
+
+            if t_avg < 6.5 or len(inc_list) > 0 or len(gaps_list) > 0 or len(miss_list) > 0:
+                misunderstood = inc_list[0] if inc_list else (gaps_list[0] if gaps_list else (miss_list[0] if miss_list else (weak_tags[0] if weak_tags else "Incomplete coverage of core concepts")))
+                why_weak = f"Factually incorrect statement detected: {inc_list[0]}" if inc_list else f"Average score was {t_avg}/10 across {t_count} question(s) with identified gaps."
+                sample_q = data["questions"][0] if data.get("questions") else topic_name
+                sample_a = data["sample_answers"][0] if data.get("sample_answers") else ""
+                demonstrated_str = f"On \"{sample_q[:70]}...\", candidate stated: \"{sample_a[:110]}...\"" if sample_a else f"Demonstrated in question on {sample_q[:80]}."
+                correct_exp = data["expected_answers"][0] if data.get("expected_answers") else (grounded_knowledge.get("mistakes", [""])[0] if grounded_knowledge.get("mistakes") else f"Review official technical documentation for {topic_name} and ensure accurate definitions.")
+                rec_practice = grounded_knowledge.get("actions", [""])[0] if grounded_knowledge.get("actions") else f"Practice 2-3 focused mock questions on {topic_name} with attention to edge cases."
+
+                verified_weaknesses.append(
+                    VerifiedWeaknessDTO(
+                        topic=topic_name,
+                        skill=data["skill"],
+                        score=t_avg,
+                        evaluations_count=t_count,
+                        why_weak=why_weak,
+                        misunderstood_or_missed=misunderstood,
+                        demonstrated_answer=demonstrated_str,
+                        correct_explanation=correct_exp,
+                        recommended_practice=rec_practice,
+                    )
+                )
+
+                # Prioritized Concepts to Improve
+                if t_avg <= 4.5 or len(inc_list) > 0:
+                    priority = "High"
+                    reason = f"Fundamental misunderstanding or low score ({t_avg}/10) directly affecting interview performance."
+                elif t_avg <= 6.5:
+                    priority = "Medium"
+                    reason = f"Moderate score ({t_avg}/10) showing partial understanding but missing key technical depth."
+                else:
+                    priority = "Low"
+                    reason = f"Good baseline ({t_avg}/10) with minor gaps in comprehensive explanation."
+
+                grounded_actions = grounded_knowledge.get("actions", [])
+                learning_obj = grounded_actions[0] if grounded_actions else f"Master {topic_name} mechanisms, architectural trade-offs, and best practices."
+                concepts_to_improve.append(
+                    ConceptToImproveDTO(
+                        topic=topic_name,
+                        priority=priority,
+                        reason=reason,
+                        learning_objective=learning_obj,
+                        practice_questions=[
+                            f"How does {topic_name} work in practice and what are its core trade-offs?",
+                            f"Walk through how you debug an issue in {topic_name}.",
+                        ],
+                        expected_outcome=f"Deliver confident, accurate, and in-depth answers on {topic_name} in interviews.",
+                    )
+                )
+
+                recent_mistakes.append({
+                    "topic": topic_name,
+                    "score": t_avg,
+                    "why_weak": why_weak,
+                    "misunderstood_or_missed": misunderstood,
+                    "correct_explanation": correct_exp,
+                })
+
+        verified_strengths.sort(key=lambda x: x.score, reverse=True)
+        verified_weaknesses.sort(key=lambda x: x.score)
+        priority_map = {"High": 1, "Medium": 2, "Low": 3}
+        concepts_to_improve.sort(key=lambda x: priority_map.get(x.priority, 4))
+
+        # Performance comparison
+        perf_comp: Optional[PerformanceComparisonDTO] = None
+        if len(session_scores) >= 2:
+            first_score = session_scores[0]
+            latest_score = session_scores[-1]
+            delta = round(latest_score - first_score, 1)
+            sign = "+" if delta > 0 else ""
+            summary_txt = (
+                f"You improved by {sign}{delta} points from your initial session ({first_score}/10) to your latest session ({latest_score}/10)."
+                if delta > 0
+                else (
+                    f"Your performance has remained consistent across sessions around {latest_score}/10."
+                    if delta == 0
+                    else f"Your latest score ({latest_score}/10) dipped by {abs(delta)} points compared to your initial session ({first_score}/10). Target identified growth areas."
+                )
+            )
+            perf_comp = PerformanceComparisonDTO(
+                first_session_score=first_score,
+                latest_session_score=latest_score,
+                score_delta=delta,
+                improved_topics=[s.concept for s in verified_strengths[:3]],
+                regressed_or_stagnant_topics=[w.topic for w in verified_weaknesses[:3]],
+                summary=summary_txt,
+            )
+
         # Skill rankings
         skill_metric_list = []
         for s_name, s_data in skill_stats.items():
@@ -321,6 +467,11 @@ class RAGCoachService:
             "recommended_interview": rec_interview,
             "all_questions_asked": all_questions_asked,
             "recent_evaluations": all_evaluations[-10:],
+            "verified_strengths": verified_strengths,
+            "verified_weaknesses": verified_weaknesses,
+            "concepts_to_improve": concepts_to_improve,
+            "performance_comparison": perf_comp,
+            "recent_mistakes": recent_mistakes,
             "resume_skills": resume_skills,
             "resume_profile": resume_profile,
         }
@@ -348,6 +499,10 @@ class RAGCoachService:
                 ),
                 next_action="Start your first interview session to establish baseline metrics.",
                 candidate_resume_skills=ctx.get("resume_skills", []),
+                verified_strengths=[],
+                verified_weaknesses=[],
+                concepts_to_improve=[],
+                performance_comparison=None,
             )
 
         weak_topics = ctx["weak_topics"]
@@ -391,6 +546,10 @@ class RAGCoachService:
             weakest_skill=weakest,
             weak_topics=weak_topics,
             strong_topics=strong_topics,
+            verified_strengths=ctx.get("verified_strengths", []),
+            verified_weaknesses=ctx.get("verified_weaknesses", []),
+            concepts_to_improve=ctx.get("concepts_to_improve", []),
+            performance_comparison=ctx.get("performance_comparison"),
             improvement_trend=trend,
             metrics=ctx["metrics"],
             recommended_interview=ctx["recommended_interview"],
@@ -592,36 +751,29 @@ class RAGCoachService:
                 reply = "You haven't uploaded a resume with extracted skills yet. Your coaching insights are currently derived from your interview evaluations."
             return CoachChatResponse(response=reply, practice_question=None, referenced_topics=r_skills[:3])
 
-        # General conversational response
-        if self.ai_provider.provider_name != "mock":
-            # Real LLM call with strict candidate grounding context
-            prompt_context = {
-                "user_name": user_name,
-                "overall_score": overall_avg,
-                "weak_topics": [{"topic": w.topic, "score": w.score, "pitfalls": w.common_pitfalls} for w in weak_topics[:3]],
-                "strong_topics": [{"topic": s.topic, "score": s.score} for s in strong_topics[:3]],
-                "trend": ctx["improvement_trend"].description,
-                "resume_skills": ctx.get("resume_skills", []),
-            }
-            llm_reply = self.ai_provider.generate_coach_chat(prompt_context, message, history or [])
-            return CoachChatResponse(
-                response=llm_reply,
-                practice_question=None,
-                referenced_topics=[w.topic for w in weak_topics[:2]],
-            )
-
-        # Mock fallback response
-        weak_str = f"**{weak_topics[0].topic}**" if weak_topics else "core technical concepts"
-        strong_str = f"**{strongest.skill}**" if strongest else "general communication"
-        if weak_topics:
-            referenced.append(weak_topics[0].topic)
-        reply = (
-            f"Hello {user_name}! In your recent interviews, your strongest skill has been {strong_str}. "
-            f"Your primary growth opportunity is {weak_str}. "
-            f"{ctx['improvement_trend'].description} "
-            f"Would you like a targeted practice question or advice on preparing for your next interview?"
+        # General conversational response (Real LLM or intelligent mock grounded in candidate metrics)
+        perf_comp = ctx.get("performance_comparison")
+        prompt_context = {
+            "user_name": user_name,
+            "overall_score": overall_avg,
+            "completed_interviews": ctx.get("completed_interviews", 0),
+            "weak_topics": [{"topic": w.topic, "score": w.score, "pitfalls": w.common_pitfalls} for w in weak_topics[:3]],
+            "strong_topics": [{"topic": s.topic, "score": s.score} for s in strong_topics[:3]],
+            "verified_strengths": [s.model_dump() if hasattr(s, "model_dump") else (s.dict() if hasattr(s, "dict") else s) for s in ctx.get("verified_strengths", [])],
+            "verified_weaknesses": [w.model_dump() if hasattr(w, "model_dump") else (w.dict() if hasattr(w, "dict") else w) for w in ctx.get("verified_weaknesses", [])],
+            "concepts_to_improve": [c.model_dump() if hasattr(c, "model_dump") else (c.dict() if hasattr(c, "dict") else c) for c in ctx.get("concepts_to_improve", [])],
+            "performance_comparison": perf_comp.model_dump() if hasattr(perf_comp, "model_dump") and perf_comp else (perf_comp.dict() if hasattr(perf_comp, "dict") and perf_comp else perf_comp),
+            "recent_mistakes": ctx.get("recent_mistakes", []),
+            "trend": ctx["improvement_trend"].description,
+            "resume_skills": ctx.get("resume_skills", []),
+        }
+        chat_reply = self.ai_provider.generate_coach_chat(prompt_context, message, history or [])
+        ref_topics = [w.topic for w in weak_topics[:2]]
+        return CoachChatResponse(
+            response=chat_reply,
+            practice_question=None,
+            referenced_topics=ref_topics,
         )
-        return CoachChatResponse(response=reply, practice_question=None, referenced_topics=referenced)
 
     # ----------------------------------------------------------------------
     # Backward-Compatible Legacy Method

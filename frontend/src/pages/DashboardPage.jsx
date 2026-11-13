@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import api, { fetchAnalytics, fetchAICoach, fetchCoachSummary, askCoachChat } from '../services/api';
-import { ResponsiveContainer, LineChart, Line, CartesianGrid, XAxis, YAxis, Tooltip } from 'recharts';
 import { StatusBadge, DifficultyBadge } from '../components/Badge';
 import GlassCard from '../components/GlassCard';
 import Button from '../components/Button';
@@ -183,10 +182,17 @@ function AICoachChatDrawer({ isOpen, onClose, coachData, onStartPractice }) {
           </button>
           <button
             type="button"
-            onClick={() => handleQuickPrompt('Why?')}
+            onClick={() => handleQuickPrompt('Why were my weak topics flagged?')}
             className="px-3 py-1.5 rounded-lg text-[11px] font-semibold bg-white/5 hover:bg-white/10 text-slate-300 border border-white/10 transition-colors"
           >
             Why?
+          </button>
+          <button
+            type="button"
+            onClick={() => handleQuickPrompt('Compare my first and latest interview')}
+            className="px-3 py-1.5 rounded-lg text-[11px] font-semibold bg-white/5 hover:bg-white/10 text-slate-300 border border-white/10 transition-colors"
+          >
+            Compare Sessions
           </button>
           <button
             type="button"
@@ -232,7 +238,7 @@ function AICoachCard({ coachData, loadingCoach, errorCoach, onStartPractice }) {
   const trend = coachData?.improvement_trend;
   const recInterview = coachData?.recommended_interview;
 
-  // Group topics by parent skill for Section 17 topic breakdown (unconditionally at top)
+  // Group topics by parent skill
   const topicsBySkill = useMemo(() => {
     if (!coachData) return {};
     const all =
@@ -446,7 +452,7 @@ function AICoachCard({ coachData, loadingCoach, errorCoach, onStartPractice }) {
                   </div>
                 </div>
 
-                {/* Common Pitfalls / Focus needed */}
+                {/* Common Pitfalls */}
                 {weakTopics[0]?.common_pitfalls && weakTopics[0].common_pitfalls.length > 0 && (
                   <div className="p-4 rounded-xl bg-amber-500/10 border border-amber-500/20 space-y-2">
                     <span className="text-[11px] font-bold uppercase tracking-wider text-amber-400">
@@ -495,7 +501,7 @@ function AICoachCard({ coachData, loadingCoach, errorCoach, onStartPractice }) {
                     </div>
                   )}
 
-                  {/* Actions Buttons */}
+                  {/* Action Buttons */}
                   <div className="pt-3 flex flex-col sm:flex-row items-center gap-3">
                     <Button
                       onClick={() => onStartPractice(coachData)}
@@ -547,6 +553,13 @@ export default function DashboardPage() {
   const [loadingCoach, setLoadingCoach] = useState(true);
   const [errorCoach, setErrorCoach] = useState('');
 
+  // Expandable question evaluations state
+  const [expandedQuestions, setExpandedQuestions] = useState({});
+
+  const toggleQuestion = (idx) => {
+    setExpandedQuestions((prev) => ({ ...prev, [idx]: !prev[idx] }));
+  };
+
   /* ── Fetch data on mount ───────────────────────────── */
   useEffect(() => {
     const fetchData = async () => {
@@ -580,7 +593,6 @@ export default function DashboardPage() {
         const { data: coachRes } = await fetchCoachSummary();
         setCoachData(coachRes);
       } catch {
-        // Fallback to legacy coach endpoint if summary endpoint fails
         try {
           const { data: legacyRes } = await fetchAICoach();
           setCoachData(legacyRes);
@@ -599,7 +611,7 @@ export default function DashboardPage() {
     fetchData();
   }, [navigate]);
 
-  /* ── Derived metrics ───────────────────────────────── */
+  /* ── Derived metrics & evaluations ─────────────────── */
   const totalInterviews = interviews.length;
   const completedInterviews = interviews.filter((s) => s.status === 'completed');
   const inProgressCount = interviews.filter((s) => s.status === 'in_progress').length;
@@ -607,6 +619,45 @@ export default function DashboardPage() {
     totalInterviews > 0
       ? `${Math.round((completedInterviews.length / totalInterviews) * 100)}%`
       : '--';
+
+  // Grounded strengths, weaknesses, concepts to improve from Coach / Analytics
+  const verifiedStrengths = useMemo(() => {
+    if (coachData?.verified_strengths && coachData.verified_strengths.length > 0) {
+      return coachData.verified_strengths;
+    }
+    if (analytics?.verified_strengths && analytics.verified_strengths.length > 0) {
+      return analytics.verified_strengths;
+    }
+    return [];
+  }, [coachData, analytics]);
+
+  const verifiedWeaknesses = useMemo(() => {
+    if (coachData?.verified_weaknesses && coachData.verified_weaknesses.length > 0) {
+      return coachData.verified_weaknesses;
+    }
+    if (analytics?.verified_weaknesses && analytics.verified_weaknesses.length > 0) {
+      return analytics.verified_weaknesses;
+    }
+    return [];
+  }, [coachData, analytics]);
+
+  const conceptsToImprove = useMemo(() => {
+    if (coachData?.concepts_to_improve && coachData.concepts_to_improve.length > 0) {
+      return coachData.concepts_to_improve;
+    }
+    if (analytics?.concepts_to_improve && analytics.concepts_to_improve.length > 0) {
+      return analytics.concepts_to_improve;
+    }
+    return [];
+  }, [coachData, analytics]);
+
+  const performanceComparison = useMemo(() => {
+    return coachData?.performance_comparison || analytics?.performance_comparison || null;
+  }, [coachData, analytics]);
+
+  const recentEvaluations = useMemo(() => {
+    return analytics?.recent_evaluations || [];
+  }, [analytics]);
 
   /* ── Dynamic greeting ──────────────────────────────── */
   const getGreeting = () => {
@@ -616,7 +667,7 @@ export default function DashboardPage() {
     return 'Good evening 👋';
   };
 
-  /* ── Row click handler ────────────────────────────── */
+  /* ── Navigation helpers ────────────────────────────── */
   const handleRowClick = (session) => {
     if (session.status === 'completed') {
       navigate(`/interview/${session.id}/evaluation`);
@@ -625,7 +676,6 @@ export default function DashboardPage() {
     }
   };
 
-  /* ── Quick start interview navigation ─────────────── */
   const handleQuickStart = (type) => {
     navigate('/interview/setup', { state: { interview_type: type } });
   };
@@ -700,7 +750,7 @@ export default function DashboardPage() {
         <MetricCard
           title="Best Score"
           value={analytics?.best_score !== null && analytics?.best_score !== undefined ? `${analytics.best_score} / 10` : '--'}
-          subtitle={`Latest score: ${analytics?.latest_score !== null && analytics?.latest_score !== undefined ? analytics.latest_score : '--'}`}
+          subtitle={`Latest score: ${analytics?.latest_score !== null && analytics?.latest_score !== undefined ? `${analytics.latest_score} / 10` : '--'}`}
           icon={IconAnalytics}
           accent="purple"
         />
@@ -713,6 +763,538 @@ export default function DashboardPage() {
         errorCoach={errorCoach}
         onStartPractice={handleStartRecommendedPractice}
       />
+
+      {/* ── Performance Progression & Dimension Breakdown ── */}
+      {analytics && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {/* Session Progression & Comparison Card */}
+          <GlassCard className="space-y-4">
+            <div className="flex items-center justify-between border-b border-white/[0.06] pb-3">
+              <div>
+                <h3 className="text-base font-bold text-white flex items-center gap-2">
+                  <IconTrendingUp className="w-4 h-4 text-accent-cyan" />
+                  <span>Interview Session Progression</span>
+                </h3>
+                <p className="text-xs text-slate-400">Progression and consistency tracking across evaluated sessions</p>
+              </div>
+              {performanceComparison?.score_delta !== undefined && (
+                <span
+                  className={`px-2.5 py-1 text-xs font-bold rounded-full border ${
+                    performanceComparison.score_delta > 0
+                      ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
+                      : performanceComparison.score_delta < 0
+                      ? 'bg-rose-500/10 text-rose-400 border-rose-500/30'
+                      : 'bg-accent-cyan/10 text-accent-cyan border-accent-cyan/30'
+                  }`}
+                >
+                  {performanceComparison.score_delta > 0 ? `+${performanceComparison.score_delta}` : performanceComparison.score_delta} pts
+                </span>
+              )}
+            </div>
+
+            {performanceComparison ? (
+              <div className="space-y-4 pt-1">
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="p-3 rounded-xl bg-white/[0.03] border border-white/[0.06]">
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Initial Session</span>
+                    <div className="text-xl font-extrabold text-white mt-0.5">
+                      {performanceComparison.first_session_score ?? '--'} / 10
+                    </div>
+                    <span className="text-[10px] text-slate-500">Baseline benchmark</span>
+                  </div>
+                  <div className="p-3 rounded-xl bg-primary-500/10 border border-primary-500/20">
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-primary-300">Latest Session</span>
+                    <div className="text-xl font-extrabold text-white mt-0.5">
+                      {performanceComparison.latest_session_score ?? '--'} / 10
+                    </div>
+                    <span className="text-[10px] text-primary-400">Current demonstrated level</span>
+                  </div>
+                </div>
+
+                <div className="p-3.5 rounded-xl bg-white/[0.02] border border-white/[0.06] text-xs text-slate-300 leading-relaxed">
+                  {performanceComparison.summary}
+                </div>
+
+                {performanceComparison.improved_topics?.length > 0 && (
+                  <div className="space-y-1.5">
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-400">
+                      ✓ Demonstrated Mastery Areas:
+                    </span>
+                    <div className="flex flex-wrap gap-1.5">
+                      {performanceComparison.improved_topics.map((top, idx) => (
+                        <span
+                          key={idx}
+                          className="px-2 py-0.5 rounded text-[11px] font-medium bg-emerald-500/10 text-emerald-300 border border-emerald-500/20"
+                        >
+                          {top}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="py-8 text-center space-y-2">
+                <p className="text-xs text-slate-400">
+                  {completedInterviews.length === 1
+                    ? `Baseline established at ${analytics.average_score ?? '--'}/10. Complete your next interview to compare session progress.`
+                    : 'Complete interview sessions to view side-by-side progression and score trends.'}
+                </p>
+              </div>
+            )}
+          </GlassCard>
+
+          {/* Dimensional Performance Breakdown Card */}
+          <GlassCard className="space-y-4">
+            <div className="border-b border-white/[0.06] pb-3">
+              <h3 className="text-base font-bold text-white flex items-center gap-2">
+                <IconAnalytics className="w-4 h-4 text-primary-400" />
+                <span>Multi-Dimensional Skill Evaluation</span>
+              </h3>
+              <p className="text-xs text-slate-400">Evaluated competency dimensions across submitted answers</p>
+            </div>
+
+            <div className="space-y-3 pt-1">
+              <div>
+                <div className="flex justify-between text-xs font-semibold mb-1">
+                  <span className="text-slate-300">Technical Depth & Architecture</span>
+                  <span className="text-primary-400 font-mono font-bold">
+                    {analytics.average_technical_depth !== null && analytics.average_technical_depth !== undefined ? `${analytics.average_technical_depth} / 10` : '--'}
+                  </span>
+                </div>
+                <div className="h-2 w-full bg-white/5 rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-gradient-to-r from-primary-600 to-indigo-400 rounded-full transition-all duration-700"
+                    style={{ width: `${((analytics.average_technical_depth || 0) / 10) * 100}%` }}
+                  />
+                </div>
+              </div>
+
+              <div>
+                <div className="flex justify-between text-xs font-semibold mb-1">
+                  <span className="text-slate-300">Answer Correctness & Accuracy</span>
+                  <span className="text-accent-emerald font-mono font-bold">
+                    {analytics.average_correctness !== null && analytics.average_correctness !== undefined ? `${analytics.average_correctness} / 10` : '--'}
+                  </span>
+                </div>
+                <div className="h-2 w-full bg-white/5 rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-gradient-to-r from-accent-emerald to-teal-400 rounded-full transition-all duration-700"
+                    style={{ width: `${((analytics.average_correctness || 0) / 10) * 100}%` }}
+                  />
+                </div>
+              </div>
+
+              <div>
+                <div className="flex justify-between text-xs font-semibold mb-1">
+                  <span className="text-slate-300">Role & Problem Relevance</span>
+                  <span className="text-amber-400 font-mono font-bold">
+                    {analytics.average_relevance !== null && analytics.average_relevance !== undefined ? `${analytics.average_relevance} / 10` : '--'}
+                  </span>
+                </div>
+                <div className="h-2 w-full bg-white/5 rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-gradient-to-r from-amber-500 to-orange-400 rounded-full transition-all duration-700"
+                    style={{ width: `${((analytics.average_relevance || 0) / 10) * 100}%` }}
+                  />
+                </div>
+              </div>
+
+              <div>
+                <div className="flex justify-between text-xs font-semibold mb-1">
+                  <span className="text-slate-300">Communication & Explanation Clarity</span>
+                  <span className="text-accent-cyan font-mono font-bold">
+                    {analytics.average_communication_quality !== null && analytics.average_communication_quality !== undefined ? `${analytics.average_communication_quality} / 10` : '--'}
+                  </span>
+                </div>
+                <div className="h-2 w-full bg-white/5 rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-gradient-to-r from-accent-cyan to-blue-500 rounded-full transition-all duration-700"
+                    style={{ width: `${((analytics.average_communication_quality || 0) / 10) * 100}%` }}
+                  />
+                </div>
+              </div>
+            </div>
+          </GlassCard>
+        </div>
+      )}
+
+      {/* ── Verified Strengths & Weaknesses ─────────────── */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Strongest Verified Concepts */}
+        <GlassCard className="space-y-4 border-emerald-500/20 bg-gradient-to-b from-emerald-950/15 via-slate-900 to-slate-900">
+          <div className="flex items-center justify-between border-b border-white/[0.06] pb-3">
+            <div>
+              <h3 className="text-base font-bold text-white flex items-center gap-2">
+                <span className="w-2.5 h-2.5 rounded-full bg-accent-emerald shadow-glow-emerald" />
+                <span>Verified Demonstrated Strengths</span>
+              </h3>
+              <p className="text-xs text-slate-400">Strictly derived from questions where you scored ≥ 7.0/10</p>
+            </div>
+            <span className="px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 rounded">
+              Evidence Verified
+            </span>
+          </div>
+
+          <div className="space-y-3">
+            {verifiedStrengths.length > 0 ? (
+              verifiedStrengths.map((str, idx) => (
+                <div
+                  key={idx}
+                  className="p-4 rounded-xl bg-white/[0.03] border border-emerald-500/20 space-y-2 hover:border-emerald-500/40 transition-colors"
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-extrabold text-white">{str.concept}</span>
+                      {str.skill && str.skill !== str.concept && (
+                        <span className="px-2 py-0.5 text-[10px] font-semibold rounded bg-white/5 text-slate-300 border border-white/10">
+                          {str.skill}
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-[10px] text-slate-400">
+                        {str.evaluations_count} question{str.evaluations_count > 1 ? 's' : ''}
+                      </span>
+                      <span className="px-2.5 py-0.5 text-xs font-extrabold rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                        {str.score}/10
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="text-xs text-slate-300 flex items-start gap-2">
+                    <IconCheck className="w-4 h-4 text-emerald-400 flex-shrink-0 mt-0.5" />
+                    <span>{str.what_done_correctly}</span>
+                  </div>
+
+                  {str.evidence && (
+                    <div className="p-2.5 rounded-lg bg-emerald-950/20 border border-emerald-500/15 text-[11px] text-emerald-200/90 italic">
+                      "{str.evidence}"
+                    </div>
+                  )}
+                </div>
+              ))
+            ) : (
+              <div className="py-8 text-center text-xs text-slate-500 space-y-1">
+                <p className="font-medium text-slate-400">No verified strengths recorded yet.</p>
+                <p>Complete an interview session demonstrating technical mastery to verify strengths.</p>
+              </div>
+            )}
+          </div>
+        </GlassCard>
+
+        {/* Weakest Verified Concepts */}
+        <GlassCard className="space-y-4 border-amber-500/20 bg-gradient-to-b from-amber-950/15 via-slate-900 to-slate-900">
+          <div className="flex items-center justify-between border-b border-white/[0.06] pb-3">
+            <div>
+              <h3 className="text-base font-bold text-white flex items-center gap-2">
+                <span className="w-2.5 h-2.5 rounded-full bg-amber-400 shadow-glow-amber" />
+                <span>Verified Growth Areas & Knowledge Gaps</span>
+              </h3>
+              <p className="text-xs text-slate-400">Specific technical topics flagged for reinforcement (Score &lt; 6.5/10)</p>
+            </div>
+            <span className="px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-amber-400 bg-amber-500/10 border border-amber-500/20 rounded">
+              Action Required
+            </span>
+          </div>
+
+          <div className="space-y-3">
+            {verifiedWeaknesses.length > 0 ? (
+              verifiedWeaknesses.map((wk, idx) => (
+                <div
+                  key={idx}
+                  className="p-4 rounded-xl bg-white/[0.03] border border-amber-500/20 space-y-2.5 hover:border-amber-500/40 transition-colors"
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-extrabold text-white">{wk.topic}</span>
+                      {wk.skill && wk.skill !== wk.topic && (
+                        <span className="px-2 py-0.5 text-[10px] font-semibold rounded bg-white/5 text-slate-300 border border-white/10">
+                          {wk.skill}
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-[10px] text-slate-400">
+                        {wk.evaluations_count} question{wk.evaluations_count > 1 ? 's' : ''}
+                      </span>
+                      <span className="px-2.5 py-0.5 text-xs font-extrabold rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                        {wk.score}/10
+                      </span>
+                    </div>
+                  </div>
+
+                  <p className="text-xs text-amber-300/90 font-medium">
+                    ⚠ {wk.why_weak}
+                  </p>
+
+                  {wk.misunderstood_or_missed && (
+                    <div className="text-xs text-slate-300">
+                      <span className="font-semibold text-slate-400">Identified gap: </span>
+                      <span>{wk.misunderstood_or_missed}</span>
+                    </div>
+                  )}
+
+                  {wk.demonstrated_answer && (
+                    <div className="p-2.5 rounded-lg bg-amber-950/20 border border-amber-500/15 text-[11px] text-amber-200/90 italic">
+                      "{wk.demonstrated_answer}"
+                    </div>
+                  )}
+
+                  {wk.correct_explanation && (
+                    <div className="p-2.5 rounded-lg bg-white/[0.02] border border-white/[0.08] text-[11px] text-slate-300 space-y-1">
+                      <span className="font-bold text-accent-cyan uppercase tracking-wider text-[10px]">
+                        Correct Technical Principle:
+                      </span>
+                      <p>{wk.correct_explanation}</p>
+                    </div>
+                  )}
+
+                  {wk.recommended_practice && (
+                    <div className="text-[11px] text-slate-400">
+                      <span className="font-bold text-slate-300">Recommended Practice: </span>
+                      <span>{wk.recommended_practice}</span>
+                    </div>
+                  )}
+                </div>
+              ))
+            ) : (
+              <div className="py-8 text-center text-xs text-slate-500 space-y-1">
+                <p className="font-medium text-slate-400">No recurring weaknesses detected.</p>
+                <p>Solid technical accuracy demonstrated across your evaluated answers!</p>
+              </div>
+            )}
+          </div>
+        </GlassCard>
+      </div>
+
+      {/* ── Prioritized Concepts to Improve (Roadmap) ─────── */}
+      {conceptsToImprove.length > 0 && (
+        <GlassCard className="space-y-5">
+          <div className="flex items-center justify-between border-b border-white/[0.06] pb-3">
+            <div>
+              <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                <IconBrain className="w-5 h-5 text-accent-cyan" />
+                <span>Prioritized Concept Improvement Roadmap</span>
+              </h3>
+              <p className="text-xs text-slate-400">
+                Ranked recommendations and learning objectives based on severity of detected knowledge gaps
+              </p>
+            </div>
+            <span className="px-2.5 py-1 text-xs font-bold text-slate-300 bg-white/5 border border-white/10 rounded-full">
+              {conceptsToImprove.length} Focus Areas
+            </span>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {conceptsToImprove.map((item, idx) => {
+              const priorityStyle =
+                item.priority === 'High'
+                  ? 'bg-rose-500/10 text-rose-400 border-rose-500/30'
+                  : item.priority === 'Medium'
+                  ? 'bg-amber-500/10 text-amber-400 border-amber-500/30'
+                  : 'bg-accent-cyan/10 text-accent-cyan border-accent-cyan/30';
+
+              return (
+                <div
+                  key={idx}
+                  className="p-5 rounded-2xl bg-white/[0.02] border border-white/[0.08] hover:border-white/20 transition-all flex flex-col justify-between space-y-4"
+                >
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className={`px-2 py-0.5 text-[10px] font-extrabold uppercase tracking-wider rounded border ${priorityStyle}`}>
+                        {item.priority} Priority
+                      </span>
+                    </div>
+                    <h4 className="text-base font-extrabold text-white">{item.topic}</h4>
+                    <p className="text-xs text-slate-400 leading-relaxed">{item.reason}</p>
+                  </div>
+
+                  <div className="space-y-3 pt-2 border-t border-white/[0.06] text-xs">
+                    <div>
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                        Learning Objective:
+                      </span>
+                      <p className="text-slate-300 mt-0.5">{item.learning_objective}</p>
+                    </div>
+
+                    {item.practice_questions && item.practice_questions.length > 0 && (
+                      <div>
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-accent-cyan">
+                          Targeted Practice Prompts:
+                        </span>
+                        <ul className="text-slate-300 mt-1 space-y-1 list-disc list-inside text-[11px]">
+                          {item.practice_questions.map((pq, pIdx) => (
+                            <li key={pIdx} className="line-clamp-2">{pq}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+
+                    {item.expected_outcome && (
+                      <div className="p-2.5 rounded-xl bg-white/[0.02] border border-white/5 text-[11px] text-slate-300">
+                        <span className="font-semibold text-slate-400">Expected Outcome: </span>
+                        <span>{item.expected_outcome}</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </GlassCard>
+      )}
+
+      {/* ── Detailed Interview Feedback (Recent Evaluations) ── */}
+      {recentEvaluations.length > 0 && (
+        <GlassCard className="space-y-4">
+          <div className="flex items-center justify-between border-b border-white/[0.06] pb-3">
+            <div>
+              <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                <IconSparkles className="w-5 h-5 text-accent-cyan" />
+                <span>Detailed Question-Level Evaluations</span>
+              </h3>
+              <p className="text-xs text-slate-400">
+                Inspect structured technical feedback, correct points, and knowledge gaps from recent questions
+              </p>
+            </div>
+            <span className="text-xs text-slate-400">
+              Showing {recentEvaluations.length} evaluated questions
+            </span>
+          </div>
+
+          <div className="space-y-3">
+            {recentEvaluations.map((evalItem, idx) => {
+              const isExpanded = !!expandedQuestions[idx];
+              const scoreColor =
+                evalItem.score >= 7
+                  ? 'text-accent-emerald bg-emerald-500/10 border-emerald-500/20'
+                  : evalItem.score >= 4
+                  ? 'text-amber-400 bg-amber-500/10 border-amber-500/20'
+                  : 'text-rose-400 bg-rose-500/10 border-rose-500/20';
+
+              return (
+                <div
+                  key={idx}
+                  className="rounded-xl border border-white/[0.06] bg-white/[0.02] overflow-hidden transition-all"
+                >
+                  <div
+                    onClick={() => toggleQuestion(idx)}
+                    className="p-4 cursor-pointer hover:bg-white/[0.02] flex flex-col sm:flex-row sm:items-center justify-between gap-3 transition-colors"
+                  >
+                    <div className="space-y-1 min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-primary-600/20 text-primary-300">
+                          {evalItem.topic || evalItem.job_role || 'Question'}
+                        </span>
+                        {evalItem.difficulty && (
+                          <span className="px-2 py-0.5 rounded text-[10px] font-medium bg-white/5 text-slate-400">
+                            {evalItem.difficulty}
+                          </span>
+                        )}
+                        <span className="text-[11px] font-medium text-slate-400">
+                          Session #{evalItem.session_id}
+                        </span>
+                      </div>
+                      <p className="text-xs font-semibold text-white line-clamp-1">
+                        {evalItem.question}
+                      </p>
+                    </div>
+
+                    <div className="flex items-center gap-3 self-end sm:self-auto flex-shrink-0">
+                      <span className={`px-2.5 py-1 rounded-full text-xs font-extrabold border ${scoreColor}`}>
+                        {evalItem.score} / 10
+                      </span>
+                      <span className="text-xs text-slate-400">
+                        {isExpanded ? '▲ Less' : '▼ More'}
+                      </span>
+                    </div>
+                  </div>
+
+                  {isExpanded && (
+                    <div className="p-5 border-t border-white/[0.06] space-y-4 text-xs bg-slate-950/40">
+                      <div>
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                          Full Interview Question:
+                        </span>
+                        <p className="text-slate-200 mt-1 font-medium">{evalItem.question}</p>
+                      </div>
+
+                      {evalItem.answer && (
+                        <div>
+                          <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                            Your Submitted Answer:
+                          </span>
+                          <div className="p-3 rounded-xl bg-white/[0.02] border border-white/5 text-slate-300 mt-1 whitespace-pre-wrap leading-relaxed">
+                            {evalItem.answer}
+                          </div>
+                        </div>
+                      )}
+
+                      {evalItem.answer_summary && (
+                        <div>
+                          <span className="text-[10px] font-bold uppercase tracking-wider text-accent-cyan">
+                            Answer Analysis & Feedback:
+                          </span>
+                          <p className="text-slate-300 mt-1 leading-relaxed">{evalItem.answer_summary}</p>
+                        </div>
+                      )}
+
+                      {evalItem.correct_points && evalItem.correct_points.length > 0 && (
+                        <div className="space-y-1">
+                          <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-400">
+                            ✓ Key Correct Points Demonstrated:
+                          </span>
+                          <ul className="space-y-1 text-slate-300 list-disc list-inside">
+                            {evalItem.correct_points.map((cp, cIdx) => (
+                              <li key={cIdx}>{cp}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+
+                      {evalItem.incorrect_statements && evalItem.incorrect_statements.length > 0 && (
+                        <div className="space-y-1">
+                          <span className="text-[10px] font-bold uppercase tracking-wider text-rose-400">
+                            ✗ Technical Errors / Contradictions:
+                          </span>
+                          <ul className="space-y-1 text-rose-200 list-disc list-inside">
+                            {evalItem.incorrect_statements.map((ic, iIdx) => (
+                              <li key={iIdx}>{ic}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+
+                      {evalItem.missing_concepts && evalItem.missing_concepts.length > 0 && (
+                        <div className="space-y-1">
+                          <span className="text-[10px] font-bold uppercase tracking-wider text-amber-400">
+                            ⚠ Missing Technical Concepts:
+                          </span>
+                          <ul className="space-y-1 text-amber-200 list-disc list-inside">
+                            {evalItem.missing_concepts.map((mc, mIdx) => (
+                              <li key={mIdx}>{mc}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+
+                      {evalItem.expected_answer && (
+                        <div className="p-3.5 rounded-xl bg-primary-950/30 border border-primary-500/20 space-y-1">
+                          <span className="text-[10px] font-bold uppercase tracking-wider text-primary-300">
+                            Authoritative Expected Answer / Model Solution:
+                          </span>
+                          <p className="text-slate-300 leading-relaxed">{evalItem.expected_answer}</p>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </GlassCard>
+      )}
 
       {/* ── Quick Start Section ──────────────────────────── */}
       <div className="space-y-4">
@@ -783,163 +1365,7 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* ── Performance & Chart Section ──────────────────── */}
-      {analytics && (
-        <div className="space-y-6">
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            {/* Score Trend Chart */}
-            <GlassCard className="lg:col-span-2 space-y-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h3 className="text-base font-bold text-white">Score Performance Trend</h3>
-                  <p className="text-xs text-slate-400">Historical evaluation scores over time</p>
-                </div>
-                <span className="text-xs text-primary-400 font-semibold px-2.5 py-1 bg-primary-600/10 border border-primary-500/20 rounded-full">
-                  Real-time AI Metrics
-                </span>
-              </div>
-              <div className="h-64 w-full pt-2">
-                {analytics.trend && analytics.trend.length > 0 ? (
-                  <ResponsiveContainer width="100%" height="100%">
-                    <LineChart data={analytics.trend}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
-                      <XAxis dataKey="date" stroke="#64748B" fontSize={11} />
-                      <YAxis domain={[0, 10]} stroke="#64748B" fontSize={11} />
-                      <Tooltip
-                        contentStyle={{
-                          backgroundColor: '#0B1020',
-                          borderColor: 'rgba(255,255,255,0.1)',
-                          borderRadius: '12px',
-                          color: '#F8FAFC',
-                        }}
-                      />
-                      <Line
-                        type="monotone"
-                        dataKey="score"
-                        stroke="#6C63FF"
-                        strokeWidth={3}
-                        dot={{ r: 4, fill: '#22D3EE', strokeWidth: 0 }}
-                        activeDot={{ r: 6, fill: '#6C63FF' }}
-                      />
-                    </LineChart>
-                  </ResponsiveContainer>
-                ) : (
-                  <div className="h-full flex items-center justify-center text-xs text-slate-500">
-                    Complete your first interview to generate score trends.
-                  </div>
-                )}
-              </div>
-            </GlassCard>
-
-            {/* Performance Breakdown */}
-            <GlassCard className="space-y-4">
-              <h3 className="text-base font-bold text-white">Skill Breakdown</h3>
-              <p className="text-xs text-slate-400">Dimension averages across all evaluations</p>
-
-              <div className="space-y-3 pt-2">
-                <div>
-                  <div className="flex justify-between text-xs font-semibold mb-1">
-                    <span className="text-slate-300">Technical Depth</span>
-                    <span className="text-primary-400">{analytics.average_technical_depth ?? '--'} / 10</span>
-                  </div>
-                  <div className="h-2 w-full bg-white/5 rounded-full overflow-hidden">
-                    <div
-                      className="h-full bg-gradient-to-r from-primary-600 to-indigo-400 rounded-full"
-                      style={{ width: `${((analytics.average_technical_depth || 0) / 10) * 100}%` }}
-                    />
-                  </div>
-                </div>
-
-                <div>
-                  <div className="flex justify-between text-xs font-semibold mb-1">
-                    <span className="text-slate-300">Communication Quality</span>
-                    <span className="text-accent-cyan">{analytics.average_communication_quality ?? '--'} / 10</span>
-                  </div>
-                  <div className="h-2 w-full bg-white/5 rounded-full overflow-hidden">
-                    <div
-                      className="h-full bg-gradient-to-r from-accent-cyan to-blue-500 rounded-full"
-                      style={{ width: `${((analytics.average_communication_quality || 0) / 10) * 100}%` }}
-                    />
-                  </div>
-                </div>
-
-                <div>
-                  <div className="flex justify-between text-xs font-semibold mb-1">
-                    <span className="text-slate-300">Answer Correctness</span>
-                    <span className="text-accent-emerald">{analytics.average_correctness ?? '--'} / 10</span>
-                  </div>
-                  <div className="h-2 w-full bg-white/5 rounded-full overflow-hidden">
-                    <div
-                      className="h-full bg-gradient-to-r from-accent-emerald to-teal-400 rounded-full"
-                      style={{ width: `${((analytics.average_correctness || 0) / 10) * 100}%` }}
-                    />
-                  </div>
-                </div>
-
-                <div>
-                  <div className="flex justify-between text-xs font-semibold mb-1">
-                    <span className="text-slate-300">Role Relevance</span>
-                    <span className="text-amber-400">{analytics.average_relevance ?? '--'} / 10</span>
-                  </div>
-                  <div className="h-2 w-full bg-white/5 rounded-full overflow-hidden">
-                    <div
-                      className="h-full bg-gradient-to-r from-amber-500 to-orange-400 rounded-full"
-                      style={{ width: `${((analytics.average_relevance || 0) / 10) * 100}%` }}
-                    />
-                  </div>
-                </div>
-              </div>
-            </GlassCard>
-          </div>
-
-          {/* Strengths & Weaknesses Badges */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <GlassCard className="space-y-3">
-              <h4 className="text-sm font-bold text-accent-emerald flex items-center gap-2">
-                <span className="w-2 h-2 rounded-full bg-accent-emerald" />
-                Key Demonstrated Strengths
-              </h4>
-              <div className="flex flex-wrap gap-2 pt-1">
-                {analytics.strengths && analytics.strengths.length > 0 ? (
-                  analytics.strengths.slice(0, 6).map((str, idx) => (
-                    <span
-                      key={idx}
-                      className="px-2.5 py-1 text-xs font-medium text-emerald-300 bg-emerald-500/10 border border-emerald-500/20 rounded-lg"
-                    >
-                      {str}
-                    </span>
-                  ))
-                ) : (
-                  <span className="text-xs text-slate-500">No strengths recorded yet.</span>
-                )}
-              </div>
-            </GlassCard>
-
-            <GlassCard className="space-y-3">
-              <h4 className="text-sm font-bold text-amber-400 flex items-center gap-2">
-                <span className="w-2 h-2 rounded-full bg-amber-400" />
-                Areas for Growth & Focus
-              </h4>
-              <div className="flex flex-wrap gap-2 pt-1">
-                {analytics.weaknesses && analytics.weaknesses.length > 0 ? (
-                  analytics.weaknesses.slice(0, 6).map((wk, idx) => (
-                    <span
-                      key={idx}
-                      className="px-2.5 py-1 text-xs font-medium text-amber-300 bg-amber-500/10 border border-amber-500/20 rounded-lg"
-                    >
-                      {wk}
-                    </span>
-                  ))
-                ) : (
-                  <span className="text-xs text-slate-500">No growth areas recorded yet.</span>
-                )}
-              </div>
-            </GlassCard>
-          </div>
-        </div>
-      )}
-
-      {/* ── Interview Sessions Table ─────────────────────── */}
+      {/* ── Interview Sessions History Table ─────────────── */}
       <GlassCard className="overflow-hidden p-0 border border-white/[0.08]">
         <div className="p-6 border-b border-white/[0.06] flex items-center justify-between">
           <div>

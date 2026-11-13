@@ -33,10 +33,25 @@ class EvaluationDTO(BaseModel):
     correctness: float = Field(..., ge=0, le=1, description="Correctness ratio")
     relevance: float = Field(..., ge=0, le=1, description="Relevance ratio")
     technical_depth: float = Field(..., ge=0, le=1, description="Technical depth ratio")
-    communication_quality: float = Field(..., ge=0, le=1, description="Communication quality ratio")
+    communication_quality: float = Field(default=0.7, ge=0, le=1, description="Communication quality ratio")
+    conceptual_understanding: float = Field(default=0.7, ge=0, le=1, description="Conceptual understanding ratio")
+    explanation_clarity: float = Field(default=0.7, ge=0, le=1, description="Explanation clarity ratio")
+    problem_solving: Optional[float] = Field(default=None, description="Problem-solving ability ratio (if applicable)")
+    practical_examples: Optional[float] = Field(default=None, description="Practical examples ratio (if applicable)")
+
+    # Deep structured feedback fields
+    answer_summary: str = Field(default="", description="Concise summary of candidate's answer")
+    correct_points: List[str] = Field(default_factory=list, description="Specific correct points identified")
+    incorrect_statements: List[str] = Field(default_factory=list, description="Specific incorrect technical statements")
+    missing_concepts: List[str] = Field(default_factory=list, description="Key concepts that were missing")
+    knowledge_gaps: List[str] = Field(default_factory=list, description="Specific root knowledge gaps")
+    expected_answer: str = Field(default="", description="Expected answer or improved explanation")
+    scoring_rationale: str = Field(default="", description="Evidence and rationale supporting the assigned score")
+
+    # Backward compatibility
     strengths: List[str] = Field(default_factory=list)
     weaknesses: List[str] = Field(default_factory=list)
-    feedback: str = Field(..., description="Human‑readable feedback string")
+    feedback: str = Field(default="", description="Human‑readable feedback string")
 
 from app.core.config import settings
 from app.schemas.coaching import AICoachResponse
@@ -1091,36 +1106,61 @@ class AIProvider:
         contradictions_str = ", ".join(evidence["contradiction_triggers"]) if evidence["contradiction_triggers"] else "None specified"
         sources_str = ", ".join(s["name"] for s in evidence["source_refs"]) if evidence["source_refs"] else "Official Technical Documentation"
 
+        q_type = evidence.get("question_type", "conceptual")
+        if q_type == "implementation":
+            rubric_guidance = (
+                "QUESTION-SPECIFIC RUBRIC (Coding / Implementation):\n"
+                "- Weights: Technical Correctness (35%), Problem Solving & Edge Cases (25%), Technical Depth (20%), "
+                "Conceptual Understanding (10%), Clarity (10%).\n"
+                "- Verify if candidate addressed time/space complexity and common failure modes."
+            )
+        elif q_type in ("behavioral", "scenario"):
+            rubric_guidance = (
+                "QUESTION-SPECIFIC RUBRIC (Scenario / Behavioral / System Design):\n"
+                "- Weights: Role/Situation Relevance (30%), Practical Examples & Actionable Impact (30%), "
+                "Explanation Clarity & Structure (25%), Technical Knowledge (15%)."
+            )
+        else:
+            rubric_guidance = (
+                "QUESTION-SPECIFIC RUBRIC (Conceptual / Architectural / Comparison):\n"
+                "- Weights: Conceptual Understanding (30%), Technical Correctness (30%), Technical Depth & Trade-offs (25%), "
+                "Explanation Clarity (15%)."
+            )
+
         prompt = (
-            f"You are a rigorous technical interviewer evaluating a candidate's answer.{exp_ctx}{role_ctx}{diff_ctx}\n\n"
+            f"You are a rigorous, fair technical interviewer evaluating a candidate's answer.{exp_ctx}{role_ctx}{diff_ctx}\n\n"
             f"QUESTION:\n\"{question}\"\n"
-            f"Question Type: {evidence['question_type']}\n"
+            f"Question Type: {q_type}\n"
             f"Expected Answer Concepts: {expected_concepts_str}\n"
             f"Trusted Technical Sources: {sources_str}\n"
             f"Known Contradiction Triggers: {contradictions_str}\n\n"
             f"CANDIDATE ANSWER:\n\"{answer}\"\n\n"
+            f"{rubric_guidance}\n\n"
             f"EVALUATION RULES:\n"
-            f"1. HARD RELEVANCE GATE:\n"
-            f"   - Evaluate if the answer directly addresses '{question}'.\n"
-            f"   - If candidate answer discusses an unrelated topic (e.g. historical trivia like 'Guido van Rossum created Python' for a polymorphism question, or database facts for a network question), RELEVANCE MUST BE < 0.4!\n"
-            f"   - IF RELEVANCE < 0.4, OVERALL SCORE MUST NOT EXCEED 2 OUT OF 10, REGARDLESS OF ANSWER LENGTH, GRAMMAR, OR TECHNICAL TERMS!\n"
-            f"2. FACTUAL CORRECTNESS & CONTRADICTIONS:\n"
-            f"   - Check candidate claims against trusted technical concepts ({expected_concepts_str}).\n"
-            f"   - If the answer contains explicit factual contradictions (e.g. claiming primary keys allow duplicates), CORRECTNESS MUST BE <= 0.3 AND SCORE MUST BE <= 3!\n"
-            f"3. LENGTH INDEPENDENCE:\n"
-            f"   - A short answer that correctly states the core concept MUST receive a HIGH score (8-10).\n"
-            f"   - A long answer that is off-topic or contains contradictions MUST receive a LOW score.\n"
-            f"4. SPAM / NON-ANSWER:\n"
-            f"   - Empty answer or keyboard spam ('asdfghjkl', 'python python python') MUST receive score 0 or 1.\n\n"
+            f"1. HARD RELEVANCE GATE: If candidate answer is unrelated to '{question}', RELEVANCE MUST BE < 0.4 and OVERALL SCORE MUST NOT EXCEED 2 OUT OF 10.\n"
+            f"2. FACTUAL CORRECTNESS: If the answer contains explicit factual contradictions (e.g. claiming primary keys allow duplicates), CORRECTNESS MUST BE <= 0.3 AND SCORE MUST BE <= 3!\n"
+            f"3. GRAMMAR & ACCENT FAIRNESS: DO NOT penalize technical knowledge merely because of grammar, non-native phrasing, voice transcription artifacts, or informal style. Score strictly on substantive technical merits.\n"
+            f"4. DEEP EVIDENCE: Extract exact correct points, incorrect statements, missing concepts, knowledge gaps, and expected answer based on candidate's actual words.\n\n"
             f"Return response as a JSON object matching this schema:\n"
             f"{{\n"
             f"  \"score\": 8,\n"
             f"  \"correctness\": 0.9,\n"
             f"  \"relevance\": 0.95,\n"
             f"  \"technical_depth\": 0.8,\n"
-            f"  \"communication_quality\": 0.9,\n"
+            f"  \"communication_quality\": 0.85,\n"
+            f"  \"conceptual_understanding\": 0.9,\n"
+            f"  \"explanation_clarity\": 0.85,\n"
+            f"  \"problem_solving\": 0.8,\n"
+            f"  \"practical_examples\": 0.75,\n"
+            f"  \"answer_summary\": \"Concise 1-2 sentence summary of what the candidate answered.\",\n"
+            f"  \"correct_points\": [\"Specific correct technical points made by candidate\"],\n"
+            f"  \"incorrect_statements\": [\"Specific inaccurate or contradictory technical statements\"],\n"
+            f"  \"missing_concepts\": [\"Key technical concepts that were omitted\"],\n"
+            f"  \"knowledge_gaps\": [\"Root technical knowledge gaps demonstrated\"],\n"
+            f"  \"expected_answer\": \"Model technical explanation covering core concepts and trade-offs.\",\n"
+            f"  \"scoring_rationale\": \"Specific evidence and reasoning justifying the assigned scores.\",\n"
             f"  \"strengths\": [\"Accurately states common interface and method overriding\"],\n"
-            f"  \"weaknesses\": [],\n"
+            f"  \"weaknesses\": [\"Omitted edge cases or dynamic dispatch\"],\n"
             f"  \"feedback\": \"Clear, concise, and technically accurate answer.\"\n"
             f"}}\n"
         )
@@ -1173,6 +1213,32 @@ class AIProvider:
                     parsed["relevance"] = _to_ratio(parsed.get("relevance"), 0.7)
                     parsed["technical_depth"] = _to_ratio(parsed.get("technical_depth"), 0.5)
                     parsed["communication_quality"] = _to_ratio(parsed.get("communication_quality"), 0.7)
+                    parsed["conceptual_understanding"] = _to_ratio(parsed.get("conceptual_understanding"), parsed["correctness"])
+                    parsed["explanation_clarity"] = _to_ratio(parsed.get("explanation_clarity"), parsed["communication_quality"])
+
+                    ps_raw = parsed.get("problem_solving")
+                    parsed["problem_solving"] = _to_ratio(ps_raw, parsed["technical_depth"]) if ps_raw is not None else None
+
+                    pe_raw = parsed.get("practical_examples")
+                    parsed["practical_examples"] = _to_ratio(pe_raw, parsed["technical_depth"]) if pe_raw is not None else None
+
+                    # Sanitize list fields
+                    def _to_str_list(field_name: str) -> List[str]:
+                        val = parsed.get(field_name)
+                        if isinstance(val, list):
+                            return [str(item).strip() for item in val if str(item).strip()]
+                        if isinstance(val, str) and val.strip():
+                            return [val.strip()]
+                        return []
+
+                    parsed["correct_points"] = _to_str_list("correct_points")
+                    parsed["incorrect_statements"] = _to_str_list("incorrect_statements")
+                    parsed["missing_concepts"] = _to_str_list("missing_concepts")
+                    parsed["knowledge_gaps"] = _to_str_list("knowledge_gaps")
+
+                    parsed["answer_summary"] = str(parsed.get("answer_summary") or "").strip()
+                    parsed["expected_answer"] = str(parsed.get("expected_answer") or "").strip()
+                    parsed["scoring_rationale"] = str(parsed.get("scoring_rationale") or "").strip()
 
                     if not isinstance(parsed.get("strengths"), list):
                         parsed["strengths"] = [str(parsed["strengths"])] if parsed.get("strengths") else []
@@ -1213,6 +1279,15 @@ class AIProvider:
                 relevance=0.0,
                 technical_depth=0.0,
                 communication_quality=0.0,
+                conceptual_understanding=0.0,
+                explanation_clarity=0.0,
+                answer_summary="No response submitted.",
+                correct_points=[],
+                incorrect_statements=["No answer provided."],
+                missing_concepts=["Complete technical explanation for the prompt."],
+                knowledge_gaps=["Unanswered question."],
+                expected_answer="Provide an explanation outlining key definitions, architecture, and trade-offs.",
+                scoring_rationale="Score 0 assigned because no answer was submitted.",
                 strengths=[],
                 weaknesses=["No answer provided"],
                 feedback="No answer was provided for this question.",
@@ -1231,6 +1306,15 @@ class AIProvider:
                 relevance=0.1,
                 technical_depth=0.0,
                 communication_quality=0.3,
+                conceptual_understanding=0.0,
+                explanation_clarity=0.3,
+                answer_summary=f"Candidate stated: '{clean_ans}'.",
+                correct_points=[],
+                incorrect_statements=[],
+                missing_concepts=["Core domain mechanisms and concepts."],
+                knowledge_gaps=["Candidate acknowledged unfamiliarity with the topic."],
+                expected_answer="Expected structured explanation addressing the question topic.",
+                scoring_rationale="Score 1 assigned as candidate indicated unfamiliarity without answering.",
                 strengths=[],
                 weaknesses=["Candidate indicated no knowledge of the topic"],
                 feedback="Candidate indicated they do not know the answer.",
@@ -1244,6 +1328,15 @@ class AIProvider:
                 relevance=0.0,
                 technical_depth=0.0,
                 communication_quality=0.1,
+                conceptual_understanding=0.0,
+                explanation_clarity=0.0,
+                answer_summary="Incoherent or random keyboard input.",
+                correct_points=[],
+                incorrect_statements=["Incoherent non-technical text."],
+                missing_concepts=["All substantive concepts for this question."],
+                knowledge_gaps=["Non-responsive input."],
+                expected_answer="A clear textual explanation addressing the question.",
+                scoring_rationale="Score 0 assigned for keyboard spam / gibberish input.",
                 strengths=[],
                 weaknesses=["Incoherent keyboard input"],
                 feedback="The response appears to be random keyboard text without a coherent explanation.",
@@ -1260,6 +1353,15 @@ class AIProvider:
                 relevance=0.3,
                 technical_depth=0.2,
                 communication_quality=0.2,
+                conceptual_understanding=0.2,
+                explanation_clarity=0.2,
+                answer_summary="Repeated technical keywords without meaningful sentence structure.",
+                correct_points=["Mentioned keywords related to the domain."],
+                incorrect_statements=["Repetitive keyword stuffing."],
+                missing_concepts=["Coherent conceptual explanation."],
+                knowledge_gaps=["Unable to form complete technical sentences explaining the mechanism."],
+                expected_answer="A complete sentence explaining what the concept does and how it behaves.",
+                scoring_rationale="Score 2 assigned for keyword spam without coherent explanations.",
                 strengths=[],
                 weaknesses=["Repetitive keyword spam without sentence structure"],
                 feedback="The answer repeats technical terms without providing a coherent explanation or proper sentence structure.",
@@ -1320,6 +1422,15 @@ class AIProvider:
                 relevance=0.85,
                 technical_depth=0.2,
                 communication_quality=0.6,
+                conceptual_understanding=0.2,
+                explanation_clarity=0.6,
+                answer_summary=f"Candidate stated: '{clean_ans[:100]}...'",
+                correct_points=["Addressed the target topic."],
+                incorrect_statements=[contradictions[0]],
+                missing_concepts=["Strict relational invariants and constraints."],
+                knowledge_gaps=[f"Misunderstanding of {contradictions[0]}."],
+                expected_answer="Primary keys enforce uniqueness and NOT NULL constraints to guarantee row identification.",
+                scoring_rationale=f"Score capped at 2/10 due to explicit technical contradiction: {contradictions[0]}.",
                 strengths=["Addressed the target topic"],
                 weaknesses=[f"Factually incorrect statement: {contradictions[0]}"],
                 feedback=f"The answer contains a factually incorrect statement: {contradictions[0]}.",
@@ -1334,6 +1445,15 @@ class AIProvider:
                 relevance=0.8,
                 technical_depth=0.5,
                 communication_quality=0.7,
+                conceptual_understanding=0.6,
+                explanation_clarity=0.7,
+                answer_summary=f"Candidate answered with partial uncertainty: '{clean_ans[:100]}...'",
+                correct_points=["Identified primary functional intent."],
+                incorrect_statements=[],
+                missing_concepts=["Precise implementation semantics and edge cases."],
+                knowledge_gaps=["Candidate acknowledged uncertainty on specific details."],
+                expected_answer="A comprehensive response covering both core mechanism and production trade-offs.",
+                scoring_rationale="Score 5/10 given for partial recollection and honest identification of limits.",
                 strengths=["Identified main purpose of topic"],
                 weaknesses=["Candidate expressed uncertainty on key concept details"],
                 feedback="The candidate answered part of the question accurately but acknowledged uncertainty on secondary concepts.",
@@ -1351,6 +1471,15 @@ class AIProvider:
                     relevance=0.1,
                     technical_depth=0.1,
                     communication_quality=0.6,
+                    conceptual_understanding=0.1,
+                    explanation_clarity=0.6,
+                    answer_summary=f"Candidate discussed: '{clean_ans[:100]}...'",
+                    correct_points=["Factually true statement regarding language history."],
+                    incorrect_statements=[],
+                    missing_concepts=[f"Direct explanation addressing '{question[:60]}'."],
+                    knowledge_gaps=["Off-topic response failing to answer the asked question."],
+                    expected_answer="Direct answer explaining the core concept asked in the question.",
+                    scoring_rationale="Score 1/10 assigned due to Hard Relevance Gate failure (relevance < 0.4).",
                     strengths=["Factually true statement about Python"],
                     weaknesses=["Fails to address the specific question topic"],
                     feedback="The answer is factually correct about Python, but it does not address the question asked.",
@@ -1362,12 +1491,21 @@ class AIProvider:
                     relevance=0.0,
                     technical_depth=0.0,
                     communication_quality=0.3,
+                    conceptual_understanding=0.0,
+                    explanation_clarity=0.3,
+                    answer_summary="Answer is completely unrelated to the question.",
+                    correct_points=[],
+                    incorrect_statements=["Off-topic answer."],
+                    missing_concepts=["All relevant concepts for this question."],
+                    knowledge_gaps=["Did not address the question."],
+                    expected_answer="Direct technical answer to the prompt.",
+                    scoring_rationale="Score 0 assigned due to complete lack of relevance.",
                     strengths=[],
                     weaknesses=["Completely off-topic"],
                     feedback="The answer is completely unrelated to the question.",
                 )
 
-        # Short but technically accurate answer reward (e.g. "Polymorphism allows the same interface to work with different object types.")
+        # Short but technically accurate answer reward
         if "polymorphism" in q_lower and ("interface" in a_lower or "different object" in a_lower or "different class" in a_lower):
             return EvaluationDTO(
                 score=9,
@@ -1375,6 +1513,19 @@ class AIProvider:
                 relevance=0.95,
                 technical_depth=0.8,
                 communication_quality=0.9,
+                conceptual_understanding=0.95,
+                explanation_clarity=0.9,
+                answer_summary="Candidate correctly stated that polymorphism allows a unified interface to operate on different object types.",
+                correct_points=[
+                    "Common interface across distinct object types",
+                    "Method overriding in derived classes",
+                    "Dynamic behavior dispatch"
+                ],
+                incorrect_statements=[],
+                missing_concepts=[],
+                knowledge_gaps=[],
+                expected_answer="Polymorphism allows objects of different types to respond to the same interface or method call, enabling extensible code.",
+                scoring_rationale="Score 9/10 awarded for concise, technically accurate definition of polymorphism.",
                 strengths=["Accurately states common interface and object type dynamic behavior"],
                 weaknesses=[],
                 feedback="Clear, concise, and technically accurate definition of polymorphism.",
@@ -1387,12 +1538,24 @@ class AIProvider:
                 relevance=0.95,
                 technical_depth=0.8,
                 communication_quality=0.9,
+                conceptual_understanding=0.95,
+                explanation_clarity=0.9,
+                answer_summary="Candidate accurately identified that a primary key uniquely identifies each record in a database table.",
+                correct_points=[
+                    "Uniqueness constraint on table rows",
+                    "Enforces non-null entity integrity"
+                ],
+                incorrect_statements=[],
+                missing_concepts=[],
+                knowledge_gaps=[],
+                expected_answer="A primary key is a column or set of columns that uniquely identifies each row in a table, implicitly NOT NULL and indexed.",
+                scoring_rationale="Score 9/10 awarded for precise definition of primary key row uniqueness.",
                 strengths=["Accurately identifies row uniqueness property"],
                 weaknesses=[],
                 feedback="Clear and accurate explanation of primary key functionality.",
             )
 
-        # Partially Relevant / Incomplete Answer (e.g. Threads are lightweight and share memory)
+        # Partially Relevant / Incomplete Answer
         if len(found_terms) <= 2 or len(words) < 15:
             if experience_level == "Beginner":
                 score = 7
@@ -1409,6 +1572,15 @@ class AIProvider:
                 relevance=0.85,
                 technical_depth=depth,
                 communication_quality=0.7,
+                conceptual_understanding=0.7,
+                explanation_clarity=0.7,
+                answer_summary=f"Candidate touched upon: '{clean_ans[:90]}...'",
+                correct_points=[f"Correctly references {t}" for t in found_terms[:2]] or ["Baseline understanding of the question"],
+                incorrect_statements=[],
+                missing_concepts=["Architectural trade-offs", "Edge case considerations", "Production best practices"],
+                knowledge_gaps=["Needs deeper explanation beyond surface-level definitions."],
+                expected_answer="A comprehensive explanation covering core concepts, execution flow, and practical trade-offs.",
+                scoring_rationale=f"Score {score}/10 awarded for relevant but incomplete technical explanation.",
                 strengths=[f"Mentions core concepts ({', '.join(found_terms[:2])})"],
                 weaknesses=["Incomplete technical coverage", "Needs deeper explanation"],
                 feedback=fb,
@@ -1436,6 +1608,15 @@ class AIProvider:
             relevance=0.95,
             technical_depth=depth,
             communication_quality=0.9,
+            conceptual_understanding=0.9,
+            explanation_clarity=0.9,
+            answer_summary=f"Candidate delivered a detailed explanation addressing {question[:50]}...",
+            correct_points=["Comprehensive concept coverage", "Accurate technical terminology", "Logical explanation flow"],
+            incorrect_statements=[],
+            missing_concepts=[],
+            knowledge_gaps=[],
+            expected_answer="Thorough response detailing core mechanisms, architectural trade-offs, and practical implementations.",
+            scoring_rationale="Score awarded for comprehensive explanation, appropriate technical depth, and clear structure.",
             strengths=["Comprehensive explanation", "Accurate technical terminology"],
             weaknesses=[],
             feedback=fb,
@@ -1511,9 +1692,49 @@ class AIProvider:
         self, context: Dict[str, Any], user_message: str, chat_history: List[Dict[str, str]]
     ) -> str:
         """Generate conversational coaching response strictly grounded in candidate data."""
+        msg_lower = user_message.lower().strip()
+        user_name = context.get("user_name", "Candidate")
+        weak_topics = context.get("weak_topics", [])
+        strong_topics = context.get("strong_topics", [])
+        verified_strengths = context.get("verified_strengths", [])
+        verified_weaknesses = context.get("verified_weaknesses", [])
+        recent_mistakes = context.get("recent_mistakes", [])
+        comparison = context.get("performance_comparison") or {}
+
         if self.provider_name == "mock":
-            weak_topics = context.get("weak_topics", [])
-            user_name = context.get("user_name", "Candidate")
+            if any(k in msg_lower for k in ["mistake", "wrong", "missed", "gap", "incorrect"]):
+                if recent_mistakes:
+                    m = recent_mistakes[0]
+                    return (
+                        f"In your recent interview on **{m.get('topic', 'your target role')}**, you scored {m.get('score', 0)}/10. "
+                        f"The key issue was: {m.get('why_weak', 'incomplete coverage')}. "
+                        f"What you missed: {m.get('misunderstood_or_missed', 'specific edge cases')}. "
+                        f"Correct technical understanding: {m.get('correct_explanation', 'Review the concept fundamentals')}."
+                    )
+                return "You have not made any major recorded technical errors in your evaluated interviews! Keep challenging yourself with harder questions."
+
+            if any(k in msg_lower for k in ["compare", "progress", "trend", "improve", "previous", "first vs latest"]):
+                if comparison.get("first_session_score") is not None and comparison.get("latest_session_score") is not None:
+                    delta = comparison.get("score_delta", 0.0)
+                    sign = "+" if delta > 0 else ""
+                    return (
+                        f"Comparing your sessions: You started at **{comparison.get('first_session_score')}/10** and your latest score is **{comparison.get('latest_session_score')}/10** ({sign}{delta}). "
+                        f"{comparison.get('summary', '')}"
+                    )
+                return f"You currently have {context.get('completed_interviews', 0)} completed interview(s). Complete another session to see a side-by-side progression comparison!"
+
+            if any(k in msg_lower for k in ["strong", "best", "strength"]):
+                if verified_strengths:
+                    s = verified_strengths[0]
+                    return f"Your top verified strength is **{s.get('concept')}** ({s.get('score')}/10 across {s.get('evaluations_count')} questions). You demonstrated: {s.get('what_done_correctly')}."
+                return "Complete your first interview to identify and verify your demonstrated strengths."
+
+            if any(k in msg_lower for k in ["weak", "focus", "need to learn", "growth"]):
+                if verified_weaknesses:
+                    w = verified_weaknesses[0]
+                    return f"Your primary area for growth is **{w.get('topic')}** ({w.get('score')}/10). {w.get('why_weak')}. Recommended practice: {w.get('recommended_practice')}."
+                return "No weak topics identified yet. Complete an interview to generate diagnostic feedback."
+
             weak_str = weak_topics[0]["topic"] if weak_topics else "core software engineering fundamentals"
             return (
                 f"Hello {user_name}! In your past interviews, your primary focus area has been {weak_str}. "
@@ -1522,9 +1743,19 @@ class AIProvider:
             )
 
         prompt = (
-            f"Candidate Context & Metrics:\n{json.dumps(context, indent=2)}\n\n"
-            f"Candidate Message: {user_message}\n"
-            f"Instructions: Answer concisely, encouragingly, and actionably. Ground claims strictly in their scores."
+            f"You are an expert, encouraging, and precise AI Interview Coach.\n"
+            f"Ground all answers STRICTLY in the candidate's actual interview history below. NEVER invent facts or hallucinate scores.\n\n"
+            f"CANDIDATE INTERVIEW HISTORY & ANALYTICS:\n"
+            f"{json.dumps(context, indent=2)}\n\n"
+            f"CANDIDATE MESSAGE:\n"
+            f"\"{user_message}\"\n\n"
+            f"COACHING INSTRUCTIONS:\n"
+            f"1. If asked about strongest areas or skills: Reference their verified strengths with specific score metrics.\n"
+            f"2. If asked about weak concepts or mistakes: Clearly explain the exact knowledge gaps and what they missed based on their recorded answers.\n"
+            f"3. If asked for a concept explanation: Explain the concept at their demonstrated experience level clearly with practical examples.\n"
+            f"4. If asked about progress / comparison: Compare their first vs latest session performance and note whether previously weak concepts improved.\n"
+            f"5. If asked for practice: Provide a targeted practice question tailored to their weakest concept.\n"
+            f"6. If there is insufficient data: Transparently communicate that more interview sessions are needed."
         )
 
         if self.is_real_llm:

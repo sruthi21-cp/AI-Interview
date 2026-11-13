@@ -36,6 +36,45 @@ class RecommendedInterviewDTO(BaseModel):
     reason: str = Field(..., description="Why this interview is recommended based on candidate history")
 
 
+class VerifiedStrengthDTO(BaseModel):
+    concept: str = Field(..., description="Skill or concept name")
+    skill: str = Field(default="Technical", description="Parent skill category")
+    score: float = Field(..., description="Average evaluation score out of 10")
+    evaluations_count: int = Field(default=1, description="Number of questions evaluated on this concept")
+    what_done_correctly: str = Field(..., description="What the candidate demonstrated correctly")
+    evidence: str = Field(..., description="Evidence excerpt from actual answers")
+
+
+class VerifiedWeaknessDTO(BaseModel):
+    topic: str = Field(..., description="Exact topic or concept (e.g. 'SQL LEFT JOIN')")
+    skill: str = Field(default="Technical", description="Parent skill category")
+    score: float = Field(..., description="Average evaluation score out of 10")
+    evaluations_count: int = Field(default=1, description="Number of questions evaluated on this topic")
+    why_weak: str = Field(..., description="Exact technical reason why it is weak")
+    misunderstood_or_missed: str = Field(..., description="What the candidate misunderstood or missed")
+    demonstrated_answer: str = Field(..., description="Question and answer excerpt demonstrating the weakness")
+    correct_explanation: str = Field(..., description="Correct technical explanation")
+    recommended_practice: str = Field(..., description="Actionable recommended practice")
+
+
+class ConceptToImproveDTO(BaseModel):
+    topic: str = Field(..., description="Topic name")
+    priority: str = Field(..., description="'High' | 'Medium' | 'Low'")
+    reason: str = Field(..., description="Reason for assigned priority")
+    learning_objective: str = Field(..., description="Specific learning objective")
+    practice_questions: List[str] = Field(default_factory=list, description="Recommended targeted practice questions")
+    expected_outcome: str = Field(..., description="Expected outcome after improvement")
+
+
+class PerformanceComparisonDTO(BaseModel):
+    first_session_score: Optional[float] = Field(None, description="Score of first completed interview")
+    latest_session_score: Optional[float] = Field(None, description="Score of latest completed interview")
+    score_delta: float = Field(default=0.0, description="Change in score between first and latest")
+    improved_topics: List[str] = Field(default_factory=list, description="Topics that showed measurable improvement")
+    regressed_or_stagnant_topics: List[str] = Field(default_factory=list, description="Topics still needing attention")
+    summary: str = Field(default="", description="Textual explanation of progress over time")
+
+
 class CoachSummaryResponse(BaseModel):
     has_enough_data: bool = Field(True, description="False if insufficient history exists for coaching")
     summary: str = Field(..., description="Personalized greeting and analysis summary")
@@ -60,6 +99,18 @@ class CoachSummaryResponse(BaseModel):
     next_action: str = Field(..., description="Clear single next action")
     all_topics: List[TopicMetricDTO] = Field(
         default_factory=list, description="All evaluated topics with scores and status"
+    )
+    verified_strengths: List[VerifiedStrengthDTO] = Field(
+        default_factory=list, description="Evidence-backed verified strengths from actual evaluated answers"
+    )
+    verified_weaknesses: List[VerifiedWeaknessDTO] = Field(
+        default_factory=list, description="Specific knowledge gaps and misunderstandings from actual answers"
+    )
+    concepts_to_improve: List[ConceptToImproveDTO] = Field(
+        default_factory=list, description="Prioritized roadmap of concepts to improve"
+    )
+    performance_comparison: Optional[PerformanceComparisonDTO] = Field(
+        None, description="Comparison between historical and current performance"
     )
     candidate_resume_skills: List[str] = Field(
         default_factory=list, description="Skills detected from candidate's resume"
